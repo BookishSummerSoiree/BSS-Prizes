@@ -1,13 +1,20 @@
 {
-  "name": "Bookish Summer Soirée — Prize Manager",
-  "short_name": "Soirée Prizes",
+  "name": "Soiree Prizes",
+  "short_name": "Soiree Prizes",
   "start_url": ".",
-  "scope": ".",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#F4EFEA",
+  "theme_color": "#F4EFEA",
   "icons": [
-    {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-    {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
