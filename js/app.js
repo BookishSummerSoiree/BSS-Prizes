@@ -62,12 +62,13 @@ async function startApp() {
 }
 
 function renderShell() {
+  try { if (new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed'); } catch(e) {}
   const user  = currentUser();
   const admin = isAdmin();
   document.getElementById('root').innerHTML = `
     <div class="shell">
-      <div style="padding:12px 14px 8px;display:flex;align-items:center;justify-content:space-between">
-        <div>
+      <div id="pm-head" style="padding:12px 14px 8px;display:flex;align-items:center;justify-content:space-between">
+        <div id="pm-title">
           <div style="font-family:Georgia,serif;font-size:17px;font-weight:500">Bookish Summer Soirée</div>
           <div style="font-size:11px;color:var(--text2)">Prize Manager</div>
         </div>

@@ -56,3 +56,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple)}
 .cat-pill.cat-swag-bag{background:var(--bg2);color:var(--text2)}
 
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+/* ── Shown inside Soirée HQ (HQ adds ?embed=1): one window, nav moves to the top ── */
+body.embed #pm-title{display:none}
+body.embed #pm-head{justify-content:flex-end !important}
+body.embed .tab-bar{bottom:auto;top:0;border-top:none;border-bottom:.5px solid var(--border);padding-top:var(--safe-top);padding-bottom:0}
+body.embed .shell{padding-top:calc(var(--safe-top) + 52px);padding-bottom:40px}
