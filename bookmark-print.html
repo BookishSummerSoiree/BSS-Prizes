@@ -129,6 +129,13 @@ document.getElementById('type-sel').value=TYPE;
 
 const BODY_TEXT='Donations like this make it<br>possible for us to provide<br>everyone a gift. 🎁<br>Please, find a way to show<br>them some gratitude!<br>Send them a message,<br>make a social media post, or<br>next time you are gift<br>shopping for yourself, or a<br>friend, remember them.';
 
+// Donor logos saved to Google Drive come back as a "view" link, which can't be used
+// as an image. Turn any Drive link into a direct, high-resolution image URL.
+function logoSrc(u){
+  u=String(u||'');
+  var m=u.match(/drive\.google\.com\/file\/d\/([\w-]+)/)||u.match(/drive\.google\.com\/(?:open|uc)\?[^#]*id=([\w-]+)/);
+  return m ? 'https://drive.google.com/thumbnail?id='+m[1]+'&sz=w2000' : u;
+}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function qr(url){return`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url||'https://example.com')}`;}
 // Since this page opens in its own new tab, window.close() usually works —
@@ -144,7 +151,7 @@ function closeTagPreview(){
   }, 300);
 }
 function donorSection(p,nameClass,imgClass){
-  if(p.donorLogo) return`<div class="${nameClass.replace('name','')}" style="width:calc(100% - 10px);margin:3px 5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:.5in"><img src="${esc(p.donorLogo)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="${nameClass}" style="display:none">${esc(p.donor)}</div></div>`;
+  if(p.donorLogo) return`<div class="${nameClass.replace('name','')}" style="width:calc(100% - 10px);margin:3px 5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:.5in"><img src="${esc(logoSrc(p.donorLogo))}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="${nameClass}" style="display:none">${esc(p.donor)}</div></div>`;
   return`<div class="${nameClass}">${esc(p.donor)}</div>`;
 }
 
@@ -172,7 +179,7 @@ function bookTag(p){
   const qrWord=p.donorQRType==='instagram'?'profile':'website';
   const qrDest=p.donorWebsite||p.url||'';
   const logoArea=p.donorLogo
-    ?`<div class="bm-donor"><img src="${esc(p.donorLogo)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="bm-donor-name" style="display:none">${esc(p.donor)}</div></div>`
+    ?`<div class="bm-donor"><img src="${esc(logoSrc(p.donorLogo))}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="bm-donor-name" style="display:none">${esc(p.donor)}</div></div>`
     :`<div class="bm-donor"><div class="bm-donor-name">${esc(p.donor)}</div></div>`;
   // Logo, headline, body, both navy lines, and the heart are all baked
   // into the template background now — only name/logo and QR+caption
@@ -193,7 +200,7 @@ function clothingTag(p){
   const isOneSize = p.clothingSize==='One size';
   const qrDest=p.donorWebsite||'';
   const logoArea=p.donorLogo
-    ?`<div class="ct-donor"><img src="${esc(p.donorLogo)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="ct-donor-name" style="display:none">${esc(p.donor)}</div></div>`
+    ?`<div class="ct-donor"><img src="${esc(logoSrc(p.donorLogo))}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="ct-donor-name" style="display:none">${esc(p.donor)}</div></div>`
     :`<div class="ct-donor"><div class="ct-donor-name">${esc(p.donor)}</div></div>`;
   // Hole, logo, ring, headline, body, both navy lines, and the heart are
   // all baked into the template background image now — only the QR code
@@ -215,7 +222,7 @@ function itemTag(p){
   const qrWord=p.donorQRType==='instagram'?'profile':'website';
   const qrDest=p.donorWebsite||'';
   const logoArea=p.donorLogo
-    ?`<div class="it-donor"><img src="${esc(p.donorLogo)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="it-donor-name" style="display:none">${esc(p.donor)}</div></div>`
+    ?`<div class="it-donor"><img src="${esc(logoSrc(p.donorLogo))}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="it-donor-name" style="display:none">${esc(p.donor)}</div></div>`
     :`<div class="it-donor"><div class="it-donor-name">${esc(p.donor)}</div></div>`;
   // Logo, headline, body, both navy lines, and heart are baked into the
   // template background now — only name/logo and QR+caption are overlays.
