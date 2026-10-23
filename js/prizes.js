@@ -15,7 +15,7 @@ var _editMode       = false;
 var _removeFlow      = null; // in-progress "remove from bundle" flow state
 var _filterDonations = false; // "Donations" toggle — layers on top of category filter
 var _filterItemType = ''; // '' = no filter; otherwise an exact itemType string
-var _sortMode = null; // null | 'az' | 'category'
+var _sortMode = null; // null | 'az' | 'category' | 'value' | 'donations'
 
 const CATEGORIES = ['BINGO','Raffle','Medium','Small','SWAG Bag','Uncategorized'];
 const CAT_LABELS = {'SWAG Bag':'SWAG', 'Uncategorized':'Unassigned'}; // display-only relabeling; underlying cat value is unchanged
@@ -61,6 +61,21 @@ function sortComparator(a, b){
     if (ai !== bi) return ai - bi;
     return (a.name||'').localeCompare(b.name||'');
   }
+  if (_sortMode === 'value') {
+    // Prizes with no value yet come first (so they're easy to find and fill
+    // in), then everything else from lowest to highest value.
+    var av = +a.value || 0, bv = +b.value || 0;
+    if (!av !== !bv) return !av ? -1 : 1;
+    if (av !== bv) return av - bv;
+    return (a.name||'').localeCompare(b.name||'');
+  }
+  if (_sortMode === 'donations') {
+    // Donated prizes first, grouped by who donated them (A-Z), then the rest.
+    var ad = (a.donor||'').trim(), bd = (b.donor||'').trim();
+    if (!ad !== !bd) return ad ? -1 : 1;
+    if (ad !== bd) return ad.localeCompare(bd);
+    return (a.name||'').localeCompare(b.name||'');
+  }
   return 0;
 }
 
@@ -89,10 +104,12 @@ function renderPrizes() {
     '<div style="margin-bottom:8px">'+
       '<input type="text" id="prize-search" value="'+escHtml(_searchQ)+'" placeholder="Search prizes, donors, notes\u2026" style="width:100%;font-size:16px;padding:8px 12px" oninput="debouncePrizeSearch(this.value)">'+
     '</div>'+
-    '<div style="display:flex;gap:5px;align-items:center;margin-bottom:8px">'+
+    '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
       '<span style="font-size:11px;color:var(--text3)">Sort by:</span>'+
       '<button class="cat-btn'+(_sortMode==='az'?' active':'')+'" onclick="setSortMode(\'az\')">A-Z</button>'+
       '<button class="cat-btn'+(_sortMode==='category'?' active':'')+'" onclick="setSortMode(\'category\')">Category</button>'+
+      '<button class="cat-btn'+(_sortMode==='value'?' active':'')+'" onclick="setSortMode(\'value\')">Value'+(function(){ var n=getPrizes().filter(function(p){ return p && !p.isBundle && !(+p.value); }).length; return n ? ' ('+n+' blank)' : ''; })()+'</button>'+
+      '<button class="cat-btn'+(_sortMode==='donations'?' active':'')+'" onclick="setSortMode(\'donations\')">Donations</button>'+
     '</div>'+
     '<div style="border-top:1px solid var(--border2);margin-bottom:8px"></div>'+
     '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">'+
@@ -256,7 +273,7 @@ function virtualUnitCard(p, idx, total) {
           '<span style="font-size:9px;color:var(--text3)">Unit '+(idx+1)+' of '+total+'</span>'+
         '</div>'+
         '<div style="font-size:14px;font-weight:600">'+escHtml(p.name||'Unnamed prize')+'</div>'+
-        (p.value?'<div style="font-size:11px;color:var(--text2);margin-top:2px">Value '+fmt$(p.value)+'</div>':'')+
+        (p.value?'<div style="font-size:11px;color:var(--text2);margin-top:2px">Value '+fmt$(p.value)+'</div>':(_sortMode==='value'?'<div style="font-size:11px;color:var(--amber);margin-top:2px">No value yet</div>':''))+
       '</div>'+
       '<div style="flex-shrink:0;padding:4px 2px 4px 8px;cursor:pointer" onclick="openEditPrize('+p.id+')"><i class="ti ti-chevron-right" style="font-size:14px;color:var(--text3)"></i></div>'+
     '</div>'+
@@ -376,7 +393,7 @@ function prizeCard(p) {
         '<div style="font-size:14px;font-weight:600">'+escHtml(p.name||'Unnamed prize')+'</div>'+
         (p.donor?'<div style="font-size:11px;color:var(--purple-text);margin-top:2px"><i class="ti ti-user" style="font-size:10px"></i> '+escHtml(p.donor)+'</div>':'')+
         '<div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">'+
-          (p.value?'<span style="font-size:11px;color:var(--text2)">Value '+fmt$(p.value)+'</span>':'')+
+          (p.value?'<span style="font-size:11px;color:var(--text2)">Value '+fmt$(p.value)+'</span>':(_sortMode==='value'?'<span style="font-size:11px;color:var(--amber)">No value yet</span>':''))+
           '<span style="font-size:11px;color:var(--amber)">Paid '+fmt$(p.paid)+'</span>'+
           (p.qty>1?'<span style="font-size:11px;color:var(--text2)">x'+p.qty+'</span>':'')+
           (tagStage?'<span style="font-size:10px;color:var(--green)">'+tagStage+'</span>':'')+
