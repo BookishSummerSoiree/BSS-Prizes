@@ -561,7 +561,7 @@ async function resolvePrizeForBundle(prizeId, qty) {
     qty: qty, loc: p.loc, notes: p.notes,
     donorType: p.donorType, donor: p.donor, donorWebsite: p.donorWebsite,
     donorQRType: p.donorQRType, donorPronoun: p.donorPronoun, donorLogo: p.donorLogo,
-    donationTagType: p.donationTagType, author: p.author, bookTitle: p.bookTitle,
+    donationTagType: p.donationTagType, author: p.author, bookTitle: p.bookTitle, isSeries: p.isSeries,
     clothingType: p.clothingType, clothingTypeCustom: p.clothingTypeCustom,
     clothingDescription: p.clothingDescription, clothingSize: p.clothingSize, clothingSizeCustom: p.clothingSizeCustom,
     needTag: p.needTag, photos: p.photos||[]
@@ -1280,7 +1280,8 @@ function _selectItemTypeInner(t, preFill) {
     }
     nameSection =
       '<div class="field"><label>Author</label><input type="text" id="pm-author" value="'+escHtml(authorVal)+'" placeholder="Author name"></div>'+
-      '<div class="field"><label>Title of book/series</label><input type="text" id="pm-book-title" value="'+escHtml(titleVal)+'" placeholder="Book or series title"></div>';
+      '<div class="field"><label>Title of book/series</label><input type="text" id="pm-book-title" value="'+escHtml(titleVal)+'" placeholder="Book or series title"></div>'+
+      '<div class="field"><label>This donation is</label><select id="pm-book-series"><option value="">One book</option><option value="1"'+((pf&&pf.isSeries)?' selected':'')+'>A whole series</option></select></div>';
 
   } else if (isClothing) {
     var ctype=(pf&&pf.clothingType)||'';
@@ -1749,7 +1750,7 @@ function computePrizeNameAndTypeFields(){
     var author=document.getElementById('pm-author')?.value?.trim()||'';
     var title=document.getElementById('pm-book-title')?.value?.trim()||'';
     var name = (author&&title) ? (author+': '+title) : (author||title);
-    return {ok:!!(author&&title), name:name, extra:{author:author,bookTitle:title}, donationTagType:'book'};
+    return {ok:!!(author&&title), name:name, extra:{author:author,bookTitle:title,isSeries:!!document.getElementById('pm-book-series')?.value}, donationTagType:'book'};
   }
   if (itemType==='Clothing') {
     var ctypeRaw=document.getElementById('pm-clothing-type')?.value||'';
@@ -1893,7 +1894,7 @@ function pmDelApply(N){
 function prizeCopyFields(p, over){
   var f={name:p.name,cat:p.cat,itemType:p.itemType,value:p.value,paid:p.paid,qty:p.qty,loc:p.loc,notes:p.notes,
     donorType:p.donorType,donor:p.donor,donorWebsite:p.donorWebsite,donorQRType:p.donorQRType,donorPronoun:p.donorPronoun,donorLogo:p.donorLogo,
-    donationTagType:p.donationTagType,author:p.author,bookTitle:p.bookTitle,
+    donationTagType:p.donationTagType,author:p.author,bookTitle:p.bookTitle,isSeries:p.isSeries,
     clothingType:p.clothingType,clothingTypeCustom:p.clothingTypeCustom,clothingDescription:p.clothingDescription,
     clothingSize:p.clothingSize,clothingSizeCustom:p.clothingSizeCustom,bookishType:p.bookishType,bookishDescription:p.bookishDescription,
     needTag:p.needTag,photos:p.photos||[]};
