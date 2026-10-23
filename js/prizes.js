@@ -916,11 +916,22 @@ async function confirmDeleteBundle(id) {
 // ── Next / Add prize button, and category split popups ───────────────────────
 var _pmLastAdvance = 0, _prevCat = 'Uncategorized', _pmSubResolve = null;
 
+var _busy=0;
+function pmBusy(d){ _busy=Math.max(0,_busy+d); refreshPrimary(); }
 function refreshPrimary(){
   var b = document.getElementById('pm-primary'); if(!b) return;
-  if (document.querySelector('.modal[data-prize-id]')) return; // edit mode stays "Save"
+  var edit = !!document.querySelector('.modal[data-prize-id]');
   var r = document.getElementById('pm-rest'), last = !!(r && r.style.display!=='none');
-  b.innerHTML = last ? '<i class="ti ti-check"></i> Add prize' : 'Next <i class="ti ti-arrow-right"></i>';
+  var finalStep = edit || last;
+  var blocked = _busy>0 && finalStep;
+  if (blocked) {
+    b.innerHTML = 'Uploading\u2026';
+    b.disabled = true;
+    b.style.cssText = 'background:transparent;color:#c4c4c4;border-color:#e3e3e3;cursor:not-allowed;opacity:1;pointer-events:none';
+  } else {
+    b.disabled = false; b.style.cssText = '';
+    b.innerHTML = edit ? '<i class="ti ti-check"></i> Save' : (last ? '<i class="ti ti-check"></i> Add prize' : 'Next <i class="ti ti-arrow-right"></i>');
+  }
 }
 function pmPrimary(){
   var r = document.getElementById('pm-rest');
@@ -945,6 +956,10 @@ function pmNext(){
   showToast('Tap one of the options first','error');
 }
 
+// Enter or Tab in a one-at-a-time field moves on (and the next field gets the cursor).
+function pmStageKey(e,el){
+  if (e.key==='Enter' || (e.key==='Tab' && !e.shiftKey)) { e.preventDefault(); el.blur(); }
+}
 function catLabelOf(c){ return CAT_LABELS[c] || c; }
 function pmSubOpen(html){
   pmSubClose();
@@ -962,6 +977,15 @@ function askSplitChoice(o){
   var N=o.total, lab=escHtml(catLabelOf(o.label));
   return new Promise(function(resolve){
     _pmSubResolve = resolve;
+    if (o.mode==='qty') {
+      pmSubOpen('<h3>Quantity is now '+N+'</h3>'+
+        '<p style="font-size:13px;color:var(--text2);margin:0 0 12px">Are all '+N+' of them in the same category ('+lab+')?</p>'+
+        '<div style="display:flex;flex-direction:column;gap:8px">'+
+          '<button class="btn primary" onclick="pmSubDone('+N+')">Yes, all '+N+' are '+lab+'</button>'+
+          '<button class="btn" onclick="pmSubDone(\'some\')">No, split them up</button>'+
+        '</div>');
+      return;
+    }
     var h = '<h3>Set category to '+lab+'?</h3>'+
       '<p style="font-size:13px;color:var(--text2);margin:0 0 12px">You have '+N+' of these. Is '+lab+' the category for:</p>'+
       '<div style="display:flex;flex-direction:column;gap:8px">'+
@@ -980,14 +1004,14 @@ function pmSomeApply(N){
   pmSubDone(n);
 }
 // Resolves to {category: qty, ...} or null (cancelled). Save is disabled until the total matches.
-function askCategoryAlloc(N, start){
+function askCategoryAlloc(N, start, title){
   return new Promise(function(resolve){
     _pmSubResolve = resolve;
     var rows = CATEGORIES.map(function(c,i){
       return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><span>'+escHtml(catLabelOf(c))+'</span>'+
         '<input type="number" class="pm-alloc" data-cat="'+escHtml(c)+'" min="0" inputmode="numeric" style="width:90px" value="'+((start&&start[c])||'')+'" oninput="pmAllocUpdate('+N+')"></div>';
     }).join('');
-    pmSubOpen('<h3>Split '+N+' across categories</h3>'+rows+
+    pmSubOpen('<h3>'+escHtml(title||('Split '+N+' across categories'))+'</h3>'+rows+
       '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;margin-top:14px">'+
         '<div id="pm-alloc-math" style="font-weight:600;font-size:13px;text-align:right"></div>'+
         '<div style="display:flex;gap:8px">'+
@@ -1024,10 +1048,38 @@ function pmAllocNote(a){
     ' · <a href="#" onclick="pmReopenAlloc();return false" style="color:var(--accent,inherit)">change</a>';
 }
 async function pmReopenAlloc(){
-  var N=parseInt(document.getElementById('pm-qty')?.value)||1, cur={};
-  try{ cur=JSON.parse(document.getElementById('pm-cat-alloc').value||'{}'); }catch(e){}
+  var N=parseInt(document.getElementById('pm-qty')?.value)||1, cur=null;
+  try{ cur=JSON.parse(document.getElementById('pm-cat-alloc').value||'null'); }catch(e){}
+  if(!cur){ cur={}; var c0=document.getElementById('pm-cat')?.value; if(c0) cur[c0]=N; }
   var a = await askCategoryAlloc(N, cur);
-  if(a){ document.getElementById('pm-cat-alloc').value=JSON.stringify(a); document.getElementById('pm-cat-note').innerHTML=pmAllocNote(a); }
+  if(a){
+    document.getElementById('pm-cat-alloc').value=JSON.stringify(a);
+    document.getElementById('pm-cat-split').value='';
+    document.getElementById('pm-cat-note').innerHTML=pmAllocNote(a);
+  }
+}
+function pmUpdateSplitBtn(){
+  var b=document.getElementById('pm-split-btn'); if(!b) return;
+  var N=parseInt(document.getElementById('pm-qty')?.value)||1;
+  b.style.display = (N>1 && document.getElementById('pm-cat')?.value) ? '' : 'none';
+}
+async function onQtyChange(){
+  var q=document.getElementById('pm-qty'); if(!q) return;
+  var N=parseInt(q.value)||1, prev=parseInt(q.dataset.prev)||1;
+  pmUpdateSplitBtn();
+  if(N===prev) return;
+  q.dataset.prev=String(N);
+  var splitEl=document.getElementById('pm-cat-split'), allocEl=document.getElementById('pm-cat-alloc'), note=document.getElementById('pm-cat-note');
+  splitEl.value=''; allocEl.value=''; note.innerHTML='';
+  var cat=document.getElementById('pm-cat')?.value;
+  if(N>1 && cat){
+    var r=await askSplitChoice({total:N,label:cat,mode:'qty'});
+    if(r==='some'){
+      var start={}; start[cat]=N;
+      var a=await askCategoryAlloc(N,start);
+      if(a){ allocEl.value=JSON.stringify(a); note.innerHTML=pmAllocNote(a); }
+    }
+  }
 }
 function setCatUI(c){
   var h=document.getElementById('pm-cat'); if(h) h.value=c||'';
@@ -1059,6 +1111,7 @@ async function pickCat(newCat){
     }
   }
   _prevCat = newCat;
+  pmUpdateSplitBtn();
   var rest=document.getElementById('pm-rest');
   if (rest && rest.style.display==='none') { rest.style.display=''; }
   refreshPrimary();
@@ -1066,7 +1119,7 @@ async function pickCat(newCat){
 
 // ── Add/Edit prize modal ──────────────────────────────────────────────────────
 function savePrizeModal() {
-  if (_logoUploading) { showToast('The logo is still saving \u2014 one moment','error'); return; }
+  if (_busy>0) { showToast('An upload is still finishing \u2014 one moment','error'); return; }
   // Read prize ID from modal data attribute (more reliable than global state)
   var box = document.querySelector('.modal[data-prize-id]');
   var modalPrizeId = box ? parseInt(box.dataset.prizeId) : 0;
@@ -1213,14 +1266,14 @@ function _selectItemTypeInner(t, preFill) {
     // nothing else on screen until both are filled in. Edit mode (data
     // already exists) skips straight to showing both together.
     if (!isEdit && !authorVal) {
-      el.innerHTML = '<div class="field"><label>Author</label><input type="text" id="pm-author" placeholder="Author name" onblur="advanceBookAuthor()" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
+      el.innerHTML = '<div class="field"><label>Author</label><input type="text" id="pm-author" placeholder="Author name" onblur="advanceBookAuthor()" onkeydown="pmStageKey(event,this)"></div>';
       document.getElementById('pm-author')?.focus();
       return;
     }
     if (!isEdit && !titleVal) {
       el.innerHTML =
         '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Author: <b>'+escHtml(authorVal)+'</b></div>'+
-        '<div class="field"><label>Title of book/series</label><input type="text" id="pm-book-title" placeholder="Book or series title" onblur="advanceBookTitle()" onkeydown="if(event.key===\'Enter\')this.blur()"></div>'+
+        '<div class="field"><label>Title of book/series</label><input type="text" id="pm-book-title" placeholder="Book or series title" onblur="advanceBookTitle()" onkeydown="pmStageKey(event,this)"></div>'+
         '<input type="hidden" id="pm-author-hidden" value="'+escHtml(authorVal)+'">';
       document.getElementById('pm-book-title')?.focus();
       return;
@@ -1247,7 +1300,7 @@ function _selectItemTypeInner(t, preFill) {
             return '<button type="button" class="cat-btn'+(ctype===ct?' active':'')+'" onclick="pickClothingType(\''+ct+'\')" id="ctype-'+ct.replace(/[^a-zA-Z]/g,'')+'">'+ct+'</button>';
           }).join('')+
         '</div>'+
-        (ctype==='Other'?'<div style="margin-top:6px"><input type="text" id="pm-clothing-type-custom" placeholder="Describe the clothing type" onblur="advanceClothingTypeCustom()" onkeydown="if(event.key===\'Enter\')this.blur()"></div>':'')+
+        (ctype==='Other'?'<div style="margin-top:6px"><input type="text" id="pm-clothing-type-custom" placeholder="Describe the clothing type" onblur="advanceClothingTypeCustom()" onkeydown="pmStageKey(event,this)"></div>':'')+
         '</div>';
       if (ctype==='Other') document.getElementById('pm-clothing-type-custom')?.focus();
       return;
@@ -1262,7 +1315,7 @@ function _selectItemTypeInner(t, preFill) {
             return '<button type="button" class="cat-btn'+(csize===val?' active':'')+'" onclick="pickClothingSize(\''+val+'\')" id="csize-'+val.replace(/[^a-zA-Z]/g,'')+'">'+sz+'</button>';
           }).join('')+
         '</div>'+
-        (csize==='Custom'?'<div style="margin-top:6px"><input type="text" id="pm-clothing-size-custom" placeholder="Enter size" onblur="advanceClothingSizeCustom()" onkeydown="if(event.key===\'Enter\')this.blur()"></div>':'')+
+        (csize==='Custom'?'<div style="margin-top:6px"><input type="text" id="pm-clothing-size-custom" placeholder="Enter size" onblur="advanceClothingSizeCustom()" onkeydown="pmStageKey(event,this)"></div>':'')+
         '</div>'+
         '<input type="hidden" id="pm-clothing-type-hidden" value="'+escHtml(ctype)+'">'+
         '<input type="hidden" id="pm-clothing-type-custom-hidden" value="'+escHtml(ctypeCustom)+'">';
@@ -1274,7 +1327,7 @@ function _selectItemTypeInner(t, preFill) {
       var csizeResolved = csize==='Custom' ? csizeCustom : csize;
       el.innerHTML =
         '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Type: <b>'+escHtml(ctypeResolved)+'</b> \u00b7 Size: <b>'+escHtml(csizeResolved)+'</b></div>'+
-        '<div class="field"><label>Description</label><input type="text" id="pm-clothing-desc" placeholder="e.g. navy with gold logo" onblur="advanceClothingDesc()" onkeydown="if(event.key===\'Enter\')this.blur()"></div>'+
+        '<div class="field"><label>Description</label><input type="text" id="pm-clothing-desc" placeholder="e.g. navy with gold logo" onblur="advanceClothingDesc()" onkeydown="pmStageKey(event,this)"></div>'+
         '<input type="hidden" id="pm-clothing-type-hidden" value="'+escHtml(ctype)+'">'+
         '<input type="hidden" id="pm-clothing-type-custom-hidden" value="'+escHtml(ctypeCustom)+'">'+
         '<input type="hidden" id="pm-clothing-size-hidden" value="'+escHtml(csize)+'">'+
@@ -1320,7 +1373,7 @@ function _selectItemTypeInner(t, preFill) {
     if (!isEdit && !bdescVal) {
       el.innerHTML =
         '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Type: <b>'+escHtml(btype)+'</b></div>'+
-        '<div class="field"><label>Description</label><input type="text" id="pm-bookish-desc" placeholder="e.g. teal canvas with gold logo" onblur="advanceBookishDesc()" onkeydown="if(event.key===\'Enter\')this.blur()"></div>'+
+        '<div class="field"><label>Description</label><input type="text" id="pm-bookish-desc" placeholder="e.g. teal canvas with gold logo" onblur="advanceBookishDesc()" onkeydown="pmStageKey(event,this)"></div>'+
         '<input type="hidden" id="pm-bookish-type-hidden" value="'+escHtml(btype)+'">';
       document.getElementById('pm-bookish-desc')?.focus();
       return;
@@ -1340,7 +1393,7 @@ function _selectItemTypeInner(t, preFill) {
     // step, then everything else.
     var descOnly = (pf&&pf.name)||'';
     if (!isEdit && !descOnly) {
-      el.innerHTML = '<div class="field"><label>Prize description</label><input type="text" id="pm-name" placeholder="What is the prize?" onblur="advancePrizeDescription()" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
+      el.innerHTML = '<div class="field"><label>Prize description</label><input type="text" id="pm-name" placeholder="What is the prize?" onblur="advancePrizeDescription()" onkeydown="pmStageKey(event,this)"></div>';
       document.getElementById('pm-name')?.focus();
       return;
     }
@@ -1364,12 +1417,13 @@ function _selectItemTypeInner(t, preFill) {
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">'+
       '<div class="field"><label>Value ($)</label><input type="text" inputmode="decimal" id="pm-value" value="'+((pf&&pf.value)||'')+'" placeholder="0.00" enterkeyhint="next" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'pm-paid\')?.focus()}"></div>'+
       '<div class="field"><label>Amount paid ($)</label><input type="text" inputmode="decimal" id="pm-paid" value="'+((pf&&pf.paid)||'')+'" placeholder="0.00" enterkeyhint="next" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'pm-qty\')?.focus()}"></div>'+
-      '<div class="field"><label>Qty</label><input type="text" inputmode="numeric" pattern="[0-9]*" id="pm-qty" value="'+((pf&&pf.qty)||'')+'" placeholder="1" enterkeyhint="done" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"></div>'+
+      '<div class="field"><label>Qty</label><input type="text" inputmode="numeric" pattern="[0-9]*" id="pm-qty" data-prev="'+((pf&&parseInt(pf.qty))||1)+'" oninput="pmUpdateSplitBtn()" onchange="onQtyChange()" value="'+((pf&&pf.qty)||'')+'" placeholder="1" enterkeyhint="done" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"></div>'+
     '</div>'+
     '<div class="field"><label>Category</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+catPills+'</div>'+
       '<input type="hidden" id="pm-cat" value="'+escHtml(defaultCat)+'">'+
       '<input type="hidden" id="pm-cat-split" value=""><input type="hidden" id="pm-cat-alloc" value="">'+
-      '<div id="pm-cat-note" style="font-size:12px;color:var(--text2);margin-top:4px"></div></div>'+
+      '<div id="pm-cat-note" style="font-size:12px;color:var(--text2);margin-top:4px"></div>'+
+      '<button type="button" class="btn" id="pm-split-btn" style="display:none;margin-top:6px" onclick="pmReopenAlloc()"><i class="ti ti-arrows-split"></i> Split category</button></div>'+
     '<div id="pm-rest"'+((isEdit||defaultCat)?'':' style="display:none"')+'>'+
     '<div class="field"><label>Location</label><input type="text" id="pm-loc" value="'+escHtml((pf&&pf.loc)||'')+'" placeholder="Where is it?"></div>'+
     '<div class="field"><label>Notes</label><textarea id="pm-notes" rows="2" placeholder="Any notes\u2026">'+escHtml((pf&&pf.notes)||'')+'</textarea></div>'+
@@ -1393,6 +1447,7 @@ function _selectItemTypeInner(t, preFill) {
 
   setDonorType((pf&&pf.donorType)||'none', pf);
   renderPhotoPreview();
+  pmUpdateSplitBtn();
 
   // Add flow only: just finished the last staged field, so start on Value.
   if (!isEdit) { setTimeout(function(){ document.getElementById('pm-value')?.focus(); },60); }
@@ -1597,7 +1652,7 @@ async function handleLogoUpload(input){
   if(!donor){ showToast('Enter the donor name first, then upload the logo','error'); input.value=''; return; }
   if(file.size>30*1024*1024){ showToast('That file is over 30 MB \u2014 please use a smaller one','error'); input.value=''; return; }
   var li=document.getElementById('pm-logo'), lp=document.getElementById('pm-logo-preview');
-  _logoUploading=true;
+  pmBusy(1);
   var spin='<span style="display:inline-block;width:12px;height:12px;border:2px solid var(--border2);border-top-color:var(--text2);border-radius:50%;animation:pmspin .8s linear infinite;vertical-align:-2px;margin-right:6px"></span>';
   if(!document.getElementById('pm-spin-css')){ var st=document.createElement('style'); st.id='pm-spin-css'; st.textContent='@keyframes pmspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
   if(lp) lp.innerHTML='<span style="font-size:12px;color:var(--text2)">'+spin+'Saving logo\u2026 please wait</span>';
@@ -1623,18 +1678,21 @@ async function handleLogoUpload(input){
     }
     showToast('Could not reach Drive ('+(e.message||'error')+'). Try again.','error');
   }
-  _logoUploading=false;
+  pmBusy(-1);
   input.value='';
 }
 async function handlePhotoFile(input){
   var files=Array.from(input.files);
-  for(var i=0;i<files.length;i++){
-    showToast('Processing photo\u2026');
-    var full=await compressImage(files[i],1000,0.65);
-    var thumb=await makeThumbnail(full,150,0.5);
-    _pendingPhotos.push({full:full,thumb:thumb});
-  }
-  renderPhotoPreview(); showToast('Photo added!'); input.value='';
+  pmBusy(1);
+  try{
+    for(var i=0;i<files.length;i++){
+      showToast('Processing photo\u2026');
+      var full=await compressImage(files[i],1000,0.65);
+      var thumb=await makeThumbnail(full,150,0.5);
+      _pendingPhotos.push({full:full,thumb:thumb});
+    }
+    renderPhotoPreview(); showToast('Photo added!');
+  } finally { pmBusy(-1); input.value=''; }
 }
 function renderPhotoPreview(){
   var el=document.getElementById('photo-preview'); if(!el)return;
@@ -1789,7 +1847,16 @@ async function doEditPrize(id){
     loc:document.getElementById('pm-loc')?.value?.trim()||'',
     notes:document.getElementById('pm-notes')?.value?.trim()||'',
     photos:[..._pendingPhotos],...gen.extra,...donor,...tagFields};
-  if(moveK>0 && moveK<qty && orig && orig.cat!==newCat){
+  var alloc=null;
+  try{ alloc=JSON.parse(document.getElementById('pm-cat-alloc')?.value||'null'); }catch(e){}
+  if(alloc && qty===1) alloc=null;
+  if(alloc){
+    var asum=0; for(var ak in alloc) asum+=alloc[ak];
+    if(asum!==qty){ showToast('The quantity changed \u2014 tap Split category to set the amounts again','error'); return; }
+    var keys=Object.keys(alloc), main=(orig && alloc[orig.cat]!=null)?orig.cat:keys[0];
+    await updatePrize(id,{...fields,cat:main,qty:alloc[main]});
+    for(var ki=0;ki<keys.length;ki++){ if(keys[ki]!==main) await addPrize({...fields,cat:keys[ki],qty:alloc[keys[ki]]}); }
+  } else if(moveK>0 && moveK<qty && orig && orig.cat!==newCat){
     // Only part of the stack changes category: the new category gets its own record.
     await addPrize({...fields,cat:newCat,qty:moveK});
     await updatePrize(id,{...fields,cat:orig.cat,qty:qty-moveK});
@@ -1800,10 +1867,64 @@ async function doEditPrize(id){
   closeModal(); showToast('Prize saved!'); renderPrizes(); renderGoals();
 }
 
-function confirmDeletePrize(id){
+// Everything that shows as one stack (same name, not in a bundle) counts as one prize with a quantity.
+function stackOf(p){
+  if (p.isBundle || p.bundledInto) return [p];
+  return getPrizes().filter(function(x){ return x && !x.isBundle && !x.bundledInto && (x.name||'')===(p.name||''); });
+}
+function askDeleteChoice(N, name){
+  return new Promise(function(resolve){
+    _pmSubResolve = resolve;
+    pmSubOpen('<h3>Delete '+escHtml(name||'this prize')+'?</h3>'+
+      '<p style="font-size:13px;color:var(--text2);margin:0 0 12px">You have '+N+' of these. Delete:</p>'+
+      '<div style="display:flex;flex-direction:column;gap:8px">'+
+        '<button class="btn danger" onclick="pmSubDone('+N+')">All '+N+' of them</button>'+
+        '<button class="btn" onclick="document.getElementById(\'pm-del-row\').style.display=\'flex\';document.getElementById(\'pm-del-n\').focus()">Some of them</button>'+
+        '<div id="pm-del-row" style="display:none;align-items:center;gap:8px"><input type="number" id="pm-del-n" min="1" max="'+(N-1)+'" style="width:90px" placeholder="how many"> <span>/ '+N+'</span> <button class="btn danger" onclick="pmDelApply('+N+')">Delete</button></div>'+
+        '<button class="btn" onclick="pmSubDone(null)">Cancel</button>'+
+      '</div>');
+  });
+}
+function pmDelApply(N){
+  var n=parseInt(document.getElementById('pm-del-n')?.value);
+  if(!n||n<1||n>N){ showToast('Enter a number from 1 to '+N,'error'); return; }
+  pmSubDone(n);
+}
+function prizeCopyFields(p, over){
+  var f={name:p.name,cat:p.cat,itemType:p.itemType,value:p.value,paid:p.paid,qty:p.qty,loc:p.loc,notes:p.notes,
+    donorType:p.donorType,donor:p.donor,donorWebsite:p.donorWebsite,donorQRType:p.donorQRType,donorPronoun:p.donorPronoun,donorLogo:p.donorLogo,
+    donationTagType:p.donationTagType,author:p.author,bookTitle:p.bookTitle,
+    clothingType:p.clothingType,clothingTypeCustom:p.clothingTypeCustom,clothingDescription:p.clothingDescription,
+    clothingSize:p.clothingSize,clothingSizeCustom:p.clothingSizeCustom,bookishType:p.bookishType,bookishDescription:p.bookishDescription,
+    needTag:p.needTag,photos:p.photos||[]};
+  for(var k in over) f[k]=over[k];
+  return f;
+}
+async function confirmDeletePrize(id){
   var p=getPrize(id);
   if(!p)return;
-  if(confirm('Delete "'+escHtml(p.name||'this prize')+'"? This cannot be undone.')){
-    deletePrize(id).then(function(){closeModal();showToast('Prize deleted');renderPrizes();renderGoals();});
+  var grp=stackOf(p);
+  var N=grp.reduce(function(s,x){ return s+(+x.qty||1); },0);
+  if (N<=1) {
+    if(confirm('Delete "'+escHtml(p.name||'this prize')+'"? This cannot be undone.')){
+      deletePrize(id).then(function(){closeModal();showToast('Prize deleted');renderPrizes();renderGoals();});
+    }
+    return;
   }
+  var k=await askDeleteChoice(N,p.name);
+  if(k===null) return;
+  if(k>=N){
+    for(var i=0;i<grp.length;i++) await deletePrize(grp[i].id);
+    closeModal(); showToast('Deleted all '+N); renderPrizes(); renderGoals(); return;
+  }
+  // Deleting only some: the rest get recategorized, then the extra records are cleaned up.
+  var R=N-k;
+  var a=await askCategoryAlloc(R,null,'Recategorize the remaining '+R);
+  if(!a) return;
+  var base=grp.find(function(x){return x.id===id;})||grp[0];
+  var keys=Object.keys(a);
+  await updatePrize(base.id,{cat:keys[0],qty:a[keys[0]]});
+  for(var j=1;j<keys.length;j++) await addPrize(prizeCopyFields(base,{cat:keys[j],qty:a[keys[j]]}));
+  for(var m=0;m<grp.length;m++){ if(grp[m].id!==base.id) await deletePrize(grp[m].id); }
+  closeModal(); showToast('Deleted '+k+'; '+R+' remain'); renderPrizes(); renderGoals();
 }
