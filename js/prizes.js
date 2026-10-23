@@ -298,7 +298,10 @@ function buildPrizeList(allPrizes, bundles, individual, bundled, searchFilter, c
   var el = document.getElementById('prize-list-inner');
   if (!el) return;
   searchTier = searchTier || function(){ return 0; };
-  var bFiltered  = bundles.filter(catFilter).sort(sortComparator);
+  var bFiltered  = bundles.filter(catFilter).filter(function(b){
+    // A bundle shows for a search if its own name/notes match, or any prize inside it does.
+    return searchFilter(b) || bundled.some(function(p){ return p.bundledInto===b.name && searchFilter(p); });
+  }).sort(sortComparator);
   var iFiltered  = individual.filter(catFilter).filter(searchFilter).sort(function(a,b){ var t=searchTier(a)-searchTier(b); return t!==0?t:sortComparator(a,b); });
   var bndFiltered = bundled.filter(catFilter).filter(searchFilter).sort(function(a,b){ var t=searchTier(a)-searchTier(b); return t!==0?t:sortComparator(a,b); });
 
@@ -985,8 +988,8 @@ function askCategoryAlloc(N, start){
         '<input type="number" class="pm-alloc" data-cat="'+escHtml(c)+'" min="0" inputmode="numeric" style="width:90px" value="'+((start&&start[c])||'')+'" oninput="pmAllocUpdate('+N+')"></div>';
     }).join('');
     pmSubOpen('<h3>Split '+N+' across categories</h3>'+rows+
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px">'+
-        '<div id="pm-alloc-math" style="font-weight:600;font-size:13px"></div>'+
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;margin-top:14px">'+
+        '<div id="pm-alloc-math" style="font-weight:600;font-size:13px;text-align:right"></div>'+
         '<div style="display:flex;gap:8px">'+
           '<button class="btn" onclick="pmSubDone(null)">Cancel</button>'+
           '<button class="btn" id="pm-alloc-save" onclick="pmAllocSave('+N+')">Save</button></div>'+
@@ -1063,6 +1066,7 @@ async function pickCat(newCat){
 
 // ── Add/Edit prize modal ──────────────────────────────────────────────────────
 function savePrizeModal() {
+  if (_logoUploading) { showToast('The logo is still saving \u2014 one moment','error'); return; }
   // Read prize ID from modal data attribute (more reliable than global state)
   var box = document.querySelector('.modal[data-prize-id]');
   var modalPrizeId = box ? parseInt(box.dataset.prizeId) : 0;
@@ -1101,7 +1105,7 @@ async function showPrizeModal(p, authors, itemTypes) {
   var currentItemType = (p&&p.itemType)||'';
 
   var typeBtns = itemTypes.map(function(t){
-    return '<button class="cat-btn'+(currentItemType===t?' active':'')+'" onclick="selectItemType(\''+escHtml(t)+'\')" id="itype-'+t.replace(/ /g,'_')+'">'+escHtml(t)+'</button>';
+    return '<button class="cat-btn'+(currentItemType===t?' active':'')+'" onclick="selectItemType(\''+escHtml(t)+'\')" onkeydown="pmTypeKey(event,this)" id="itype-'+t.replace(/ /g,'_')+'">'+escHtml(t)+'</button>';
   }).join('')+'<button class="cat-btn" onclick="addNewItemType()"><i class="ti ti-plus"></i> New</button>';
 
   var actions = '<div class="m-actions">'+
@@ -1160,6 +1164,25 @@ function selectItemType(t, preFill) {
   _pmLastAdvance = Date.now();
   _selectItemTypeInner(t, preFill);
   refreshPrimary();
+  // Put the cursor in the next field right away (same tap/keypress, so phones open the keyboard),
+  // and once more a moment later in case something stole the focus.
+  pmFocusStage();
+  setTimeout(pmFocusStage, 60);
+}
+function pmFocusStage(){
+  if (document.querySelector('.modal[data-prize-id]')) return; // editing: leave the cursor alone
+  var d=document.getElementById('prize-details'); if(!d) return;
+  var target = document.getElementById('pm-rest')
+    ? document.getElementById('pm-value')
+    : d.querySelector('input:not([type="hidden"]):not([type="file"])');
+  if (target && document.activeElement!==target) target.focus();
+}
+// Tab on an already-selected item type jumps straight to the field that just appeared.
+function pmTypeKey(e, btn){
+  if (e.key==='Tab' && !e.shiftKey && btn.classList.contains('active')) {
+    var d=document.getElementById('prize-details');
+    if (d && d.querySelector('input:not([type="hidden"]):not([type="file"])')) { e.preventDefault(); pmFocusStage(); }
+  }
 }
 function _selectItemTypeInner(t, preFill) {
   document.querySelectorAll('[id^="itype-"]').forEach(function(b){b.classList.remove('active');});
@@ -1475,7 +1498,8 @@ function selectClothingSize(v) {
 function addNewItemType() {
   var name=prompt('New item type name:');
   if(!name||!name.trim())return;
-  addItemType(name.trim()).then(function(){showToast('Item type added');openAddPrize();});
+  var nm=name.trim();
+  addItemType(nm).then(function(){ showToast('Item type added'); return openAddPrize(); }).then(function(){ selectItemType(nm); });
 }
 
 function setDonorType(type, preFill) {
@@ -1510,7 +1534,10 @@ function setDonorType(type, preFill) {
   el.dataset.donorType=type;
   // Tapped by the user (not the automatic call while the form draws): start typing the name.
   if (isAuthor && !preFill) { var pr0=document.getElementById('pm-pronoun'); if(pr0) pr0.value='her'; }
-  if (arguments.length===1) setTimeout(function(){ document.getElementById('pm-donor')?.focus(); },30);
+  if (arguments.length===1) {
+    var dn=document.getElementById('pm-donor'); if(dn) dn.focus(); // right away, so phones open the keyboard
+    setTimeout(function(){ var d2=document.getElementById('pm-donor'); if(d2 && document.activeElement!==d2) d2.focus(); },60);
+  }
 }
 function toggleOtherAuthor(val){
   var f=document.getElementById('other-author-field'); if(f)f.style.display=val==='__other__'?'block':'none';
@@ -1550,6 +1577,7 @@ async function fillFromAuthorInfo(name){
 // Full-resolution donor logos are saved to Google Drive through the same Apps
 // Script as Author Info (needs the "uploadDonorLogo" action in Code.gs).
 var DONOR_LOGO_API = "https://script.google.com/macros/s/AKfycbx243aXYN1O8ABOO729RyMlgKV68OzKqVtKUqPetqVPwSKQ_5wCjI71_vyEG6y_K66i/exec";
+var _logoUploading=false;
 function fileToBase64(file){
   return new Promise(function(resolve,reject){
     var r=new FileReader();
@@ -1568,11 +1596,15 @@ async function handleLogoUpload(input){
   var donor=currentDonorName();
   if(!donor){ showToast('Enter the donor name first, then upload the logo','error'); input.value=''; return; }
   if(file.size>30*1024*1024){ showToast('That file is over 30 MB \u2014 please use a smaller one','error'); input.value=''; return; }
-  showToast('Saving full-size logo to Drive\u2026');
   var li=document.getElementById('pm-logo'), lp=document.getElementById('pm-logo-preview');
+  _logoUploading=true;
+  var spin='<span style="display:inline-block;width:12px;height:12px;border:2px solid var(--border2);border-top-color:var(--text2);border-radius:50%;animation:pmspin .8s linear infinite;vertical-align:-2px;margin-right:6px"></span>';
+  if(!document.getElementById('pm-spin-css')){ var st=document.createElement('style'); st.id='pm-spin-css'; st.textContent='@keyframes pmspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
+  if(lp) lp.innerHTML='<span style="font-size:12px;color:var(--text2)">'+spin+'Saving logo\u2026 please wait</span>';
   var isRaster=/^image\/(png|jpe?g|webp|gif)$/.test(file.type);
   var thumb=null, small=null;
-  if(isRaster){ small=await compressImage(file,800,0.8); thumb=await makeThumbnail(small,200,0.7); }
+  if(isRaster){ small=await compressImage(file,800,0.8); thumb=await makeThumbnail(small,200,0.7);
+    if(lp) lp.innerHTML='<img src="'+thumb+'" style="height:50px;border-radius:6px;border:.5px solid var(--border);opacity:.6"> <span style="font-size:12px;color:var(--text2)">'+spin+'Saving logo\u2026 please wait</span>'; }
   try{
     var b64=await fileToBase64(file);
     var res=await fetch(DONOR_LOGO_API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -1591,6 +1623,7 @@ async function handleLogoUpload(input){
     }
     showToast('Could not reach Drive ('+(e.message||'error')+'). Try again.','error');
   }
+  _logoUploading=false;
   input.value='';
 }
 async function handlePhotoFile(input){
