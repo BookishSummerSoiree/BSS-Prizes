@@ -906,6 +906,152 @@ async function confirmDeleteBundle(id) {
   }
 }
 
+
+// ── Next / Add prize button, and category split popups ───────────────────────
+var _pmLastAdvance = 0, _prevCat = 'Uncategorized', _pmSubResolve = null;
+
+function refreshPrimary(){
+  var b = document.getElementById('pm-primary'); if(!b) return;
+  if (document.querySelector('.modal[data-prize-id]')) return; // edit mode stays "Save"
+  var r = document.getElementById('pm-rest'), last = !!(r && r.style.display!=='none');
+  b.innerHTML = last ? '<i class="ti ti-check"></i> Add prize' : 'Next <i class="ti ti-arrow-right"></i>';
+}
+function pmPrimary(){
+  var r = document.getElementById('pm-rest');
+  if (document.querySelector('.modal[data-prize-id]') || (r && r.style.display!=='none')) { savePrizeModal(); return; }
+  if (r) { showToast('Pick a category first','error'); return; }
+  pmNext();
+}
+function pmNext(){
+  // Tapping Next blurs the text box first, which already advances the step.
+  if (Date.now() - _pmLastAdvance < 700) return;
+  if (!document.getElementById('pm-item-type')?.value) { showToast('Pick an item type first','error'); return; }
+  var tries = [['pm-author',advanceBookAuthor],['pm-book-title',advanceBookTitle],
+    ['pm-clothing-type-custom',advanceClothingTypeCustom],['pm-clothing-size-custom',advanceClothingSizeCustom],
+    ['pm-clothing-desc',advanceClothingDesc],['pm-bookish-desc',advanceBookishDesc],['pm-name',advancePrizeDescription]];
+  for (var i=0;i<tries.length;i++){
+    var el = document.getElementById(tries[i][0]);
+    if (el) {
+      if (!el.value.trim()) { showToast('Please fill this in first','error'); el.focus(); return; }
+      tries[i][1](); return;
+    }
+  }
+  showToast('Tap one of the options first','error');
+}
+
+function catLabelOf(c){ return CAT_LABELS[c] || c; }
+function pmSubOpen(html){
+  pmSubClose();
+  var o = document.createElement('div');
+  o.className = 'modal-overlay'; o.id = 'pm-sub-bg'; o.style.zIndex = 300;
+  o.innerHTML = '<div class="modal">'+html+'</div>';
+  document.body.appendChild(o);
+}
+function pmSubClose(){ var o=document.getElementById('pm-sub-bg'); if(o) o.remove(); }
+function pmSubDone(v){
+  var r=_pmSubResolve; _pmSubResolve=null; pmSubClose(); if(r) r(v);
+}
+// Resolves to: a number (how many to change), 'some' (add mode), or null (cancelled)
+function askSplitChoice(o){
+  var N=o.total, lab=escHtml(catLabelOf(o.label));
+  return new Promise(function(resolve){
+    _pmSubResolve = resolve;
+    var h = '<h3>Set category to '+lab+'?</h3>'+
+      '<p style="font-size:13px;color:var(--text2);margin:0 0 12px">You have '+N+' of these. Is '+lab+' the category for:</p>'+
+      '<div style="display:flex;flex-direction:column;gap:8px">'+
+        '<button class="btn primary" onclick="pmSubDone('+N+')">All '+N+' of them</button>'+
+        (o.mode==='edit'?'<button class="btn" onclick="pmSubDone(1)">Just this one</button>':'')+
+        '<button class="btn" onclick="'+(o.mode==='edit'?"document.getElementById(\'pm-some-row\').style.display=\'flex\';document.getElementById(\'pm-some-n\').focus()":"pmSubDone(\'some\')")+'">Some of them</button>'+
+        (o.mode==='edit'?'<div id="pm-some-row" style="display:none;align-items:center;gap:8px"><input type="number" id="pm-some-n" min="1" max="'+N+'" style="width:90px" placeholder="how many"> <span>/ '+N+'</span> <button class="btn primary" onclick="pmSomeApply('+N+')">Apply</button></div>':'')+
+        '<button class="btn" onclick="pmSubDone(null)">Cancel</button>'+
+      '</div>';
+    pmSubOpen(h);
+  });
+}
+function pmSomeApply(N){
+  var n = parseInt(document.getElementById('pm-some-n')?.value);
+  if (!n || n<1 || n>N) { showToast('Enter a number from 1 to '+N,'error'); return; }
+  pmSubDone(n);
+}
+// Resolves to {category: qty, ...} or null (cancelled). Save is disabled until the total matches.
+function askCategoryAlloc(N, start){
+  return new Promise(function(resolve){
+    _pmSubResolve = resolve;
+    var rows = CATEGORIES.map(function(c,i){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><span>'+escHtml(catLabelOf(c))+'</span>'+
+        '<input type="number" class="pm-alloc" data-cat="'+escHtml(c)+'" min="0" inputmode="numeric" style="width:90px" value="'+((start&&start[c])||'')+'" oninput="pmAllocUpdate('+N+')"></div>';
+    }).join('');
+    pmSubOpen('<h3>Split '+N+' across categories</h3>'+
+      '<div id="pm-alloc-math" style="font-weight:600;margin:0 0 12px"></div>'+rows+
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'+
+        '<button class="btn" onclick="pmSubDone(null)">Cancel</button>'+
+        '<button class="btn primary" id="pm-alloc-save" onclick="pmAllocSave('+N+')">Save</button></div>');
+    pmAllocUpdate(N);
+  });
+}
+function pmAllocRead(){
+  var out={}; document.querySelectorAll('.pm-alloc').forEach(function(i){ var n=parseInt(i.value)||0; if(n>0) out[i.dataset.cat]=n; });
+  return out;
+}
+function pmAllocUpdate(N){
+  var a=pmAllocRead(), sum=0; for(var k in a) sum+=a[k];
+  var left=N-sum, m=document.getElementById('pm-alloc-math'), b=document.getElementById('pm-alloc-save');
+  if(m){
+    m.textContent = left===0 ? 'Assigned '+sum+' of '+N+' ✓' : (left>0 ? 'Assigned '+sum+' of '+N+' · '+left+' left' : 'Assigned '+sum+' of '+N+' · '+(-left)+' too many');
+    m.style.color = left===0 ? 'var(--success, #2e7d32)' : (left<0 ? 'var(--danger, #c62828)' : 'var(--text)');
+  }
+  if(b) b.disabled = left!==0;
+}
+function pmAllocSave(N){
+  var a=pmAllocRead(), sum=0; for(var k in a) sum+=a[k];
+  if(sum!==N){ showToast('The quantities must add up to '+N,'error'); return; }
+  pmSubDone(a);
+}
+function pmAllocNote(a){
+  return 'Split: '+Object.keys(a).map(function(c){return a[c]+' × '+catLabelOf(c);}).join(', ')+
+    ' · <a href="#" onclick="pmReopenAlloc();return false" style="color:var(--accent,inherit)">change</a>';
+}
+async function pmReopenAlloc(){
+  var N=parseInt(document.getElementById('pm-qty')?.value)||1, cur={};
+  try{ cur=JSON.parse(document.getElementById('pm-cat-alloc').value||'{}'); }catch(e){}
+  var a = await askCategoryAlloc(N, cur);
+  if(a){ document.getElementById('pm-cat-alloc').value=JSON.stringify(a); document.getElementById('pm-cat-note').innerHTML=pmAllocNote(a); }
+}
+function setCatUI(c){
+  var h=document.getElementById('pm-cat'); if(h) h.value=c||'';
+  document.querySelectorAll('#prize-details [data-cat]').forEach(function(b){ b.classList.toggle('active', b.dataset.cat===c); });
+}
+async function pickCat(newCat){
+  var box=document.querySelector('.modal[data-prize-id]');
+  var N=parseInt(document.getElementById('pm-qty')?.value)||1;
+  var splitEl=document.getElementById('pm-cat-split'), allocEl=document.getElementById('pm-cat-alloc'), note=document.getElementById('pm-cat-note');
+  splitEl.value=''; allocEl.value=''; note.innerHTML='';
+  setCatUI(newCat);
+  if (box) {
+    var p=getPrize(parseInt(box.dataset.prizeId)), orig=p?p.cat:'';
+    if (N>1 && newCat!==orig) {
+      var k = await askSplitChoice({total:N,label:newCat,mode:'edit'});
+      if (k===null) { setCatUI(orig); return; }
+      if (k<N) {
+        splitEl.value=k;
+        note.textContent = k+' of '+N+' will move to '+catLabelOf(newCat)+'; the other '+(N-k)+' stay '+catLabelOf(orig)+'.';
+      }
+    }
+  } else if (N>1) {
+    var r = await askSplitChoice({total:N,label:newCat,mode:'add'});
+    if (r===null) { setCatUI(_prevCat); return; }
+    if (r==='some') {
+      var a = await askCategoryAlloc(N);
+      if (!a) { setCatUI(_prevCat); return; }
+      allocEl.value=JSON.stringify(a); note.innerHTML=pmAllocNote(a);
+    }
+  }
+  _prevCat = newCat;
+  var rest=document.getElementById('pm-rest');
+  if (rest && rest.style.display==='none') { rest.style.display=''; }
+  refreshPrimary();
+}
+
 // ── Add/Edit prize modal ──────────────────────────────────────────────────────
 function savePrizeModal() {
   // Read prize ID from modal data attribute (more reliable than global state)
@@ -952,7 +1098,7 @@ async function showPrizeModal(p, authors, itemTypes) {
   var actions = '<div class="m-actions">'+
     (isEdit?'<button class="btn danger" onclick="confirmDeletePrize('+p.id+')"><i class="ti ti-trash"></i> Delete</button>':'')+
     '<button class="btn" onclick="closeModal()">Cancel</button>'+
-    '<button class="btn primary" onclick="savePrizeModal()"><i class="ti ti-check"></i> '+(isEdit?'Save':'Add prize')+'</button>'+
+    '<button class="btn primary" id="pm-primary" onclick="pmPrimary()">'+(isEdit?'<i class="ti ti-check"></i> Save':'Next <i class="ti ti-arrow-right"></i>')+'</button>'+
   '</div>';
 
   var mc = document.getElementById('modal-container');
@@ -1002,6 +1148,11 @@ function captureCurrentDetails(){
 }
 
 function selectItemType(t, preFill) {
+  _pmLastAdvance = Date.now();
+  _selectItemTypeInner(t, preFill);
+  refreshPrimary();
+}
+function _selectItemTypeInner(t, preFill) {
   document.querySelectorAll('[id^="itype-"]').forEach(function(b){b.classList.remove('active');});
   var btn=document.getElementById('itype-'+t.replace(/ /g,'_')); if(btn)btn.classList.add('active');
   var inp=document.getElementById('pm-item-type'); if(inp)inp.value=t;
@@ -1168,21 +1319,35 @@ function selectItemType(t, preFill) {
   // silently blocked just because a picker didn't visually pop open —
   // desktop browsers don't auto-open a <select> the way iOS does, so this
   // was leaving Category stuck empty on Mac and blocking every save.
-  var defaultCat = (pf&&pf.cat) || 'Uncategorized';
-  var catOptions = CATEGORIES.map(function(c){return '<option value="'+c+'"'+(defaultCat===c?' selected':'')+'>'+(CAT_LABELS[c]||c)+'</option>';}).join('');
+  var defaultCat = (pf&&pf.cat) || '';
+  var catPills = CATEGORIES.map(function(c){
+    return '<button type="button" class="cat-btn'+(defaultCat===c?' active':'')+'" data-cat="'+escHtml(c)+'" onclick="pickCat(\''+c+'\')">'+escHtml(catLabelOf(c))+'</button>';
+  }).join('');
 
   var tagHtml = isEdit ? getTagStatusHtml(pf) : '';
 
+  _prevCat = defaultCat;
   el.innerHTML =
     nameSection+
-    '<div class="field"><label>Category</label><select id="pm-cat" onchange="document.getElementById(\'pm-value\')?.focus()">'+catOptions+'</select></div>'+
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">'+
       '<div class="field"><label>Value ($)</label><input type="text" inputmode="decimal" id="pm-value" value="'+((pf&&pf.value)||'')+'" placeholder="0.00"></div>'+
       '<div class="field"><label>Amount paid ($)</label><input type="text" inputmode="decimal" id="pm-paid" value="'+((pf&&pf.paid)||'')+'" placeholder="0.00"></div>'+
       '<div class="field"><label>Qty</label><input type="number" id="pm-qty" value="'+((pf&&pf.qty)||'')+'" placeholder="1" min="1"></div>'+
-      '<div class="field"><label>Location</label><input type="text" id="pm-loc" value="'+escHtml((pf&&pf.loc)||'')+'" placeholder="Where is it?"></div>'+
     '</div>'+
+    '<div class="field"><label>Category</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+catPills+'</div>'+
+      '<input type="hidden" id="pm-cat" value="'+escHtml(defaultCat)+'">'+
+      '<input type="hidden" id="pm-cat-split" value=""><input type="hidden" id="pm-cat-alloc" value="">'+
+      '<div id="pm-cat-note" style="font-size:12px;color:var(--text2);margin-top:4px"></div></div>'+
+    '<div id="pm-rest"'+((isEdit||defaultCat)?'':' style="display:none"')+'>'+
+    '<div class="field"><label>Location</label><input type="text" id="pm-loc" value="'+escHtml((pf&&pf.loc)||'')+'" placeholder="Where is it?"></div>'+
     '<div class="field"><label>Notes</label><textarea id="pm-notes" rows="2" placeholder="Any notes\u2026">'+escHtml((pf&&pf.notes)||'')+'</textarea></div>'+
+    '<div class="field"><label>Photos</label>'+
+      '<div id="photo-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>'+
+      '<div style="display:flex;gap:6px">'+
+        '<label class="btn" style="cursor:pointer"><i class="ti ti-camera"></i> Take photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoFile(this)"></label>'+
+        '<label class="btn" style="cursor:pointer"><i class="ti ti-photo"></i> Choose<input type="file" accept="image/*" multiple style="display:none" onchange="handlePhotoFile(this)"></label>'+
+      '</div>'+
+    '</div>'+
     '<div class="field"><label>Donor</label>'+
       '<div style="display:flex;gap:6px;margin-bottom:8px">'+
         '<button class="cat-btn'+((!pf||!pf.donorType||pf.donorType==='none')?' active':'')+'" onclick="setDonorType(\'none\')" id="donor-btn-none">None</button>'+
@@ -1191,27 +1356,14 @@ function selectItemType(t, preFill) {
       '</div>'+
       '<div id="donor-fields"></div>'+
     '</div>'+
-    '<div class="field"><label>Photos</label>'+
-      '<div id="photo-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>'+
-      '<div style="display:flex;gap:6px">'+
-        '<label class="btn" style="cursor:pointer"><i class="ti ti-camera"></i> Take photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoFile(this)"></label>'+
-        '<label class="btn" style="cursor:pointer"><i class="ti ti-photo"></i> Choose<input type="file" accept="image/*" multiple style="display:none" onchange="handlePhotoFile(this)"></label>'+
-      '</div>'+
-    '</div>'+
-    tagHtml;
+    tagHtml+
+    '</div>';
 
   setDonorType((pf&&pf.donorType)||'none', pf);
   renderPhotoPreview();
 
-  // Add flow only: just finished the last staged field, so pop the Category
-  // picker open immediately rather than leaving it sitting there unopened.
-  if (!isEdit) {
-    var catSelEl = document.getElementById('pm-cat');
-    if (catSelEl) {
-      catSelEl.focus();
-      if (typeof catSelEl.showPicker === 'function') { try { catSelEl.showPicker(); } catch(e){} }
-    }
-  }
+  // Add flow only: just finished the last staged field, so start on Value.
+  if (!isEdit) { document.getElementById('pm-value')?.focus(); }
 
   if (pf&&pf.donor) {
     setTimeout(function(){
@@ -1354,15 +1506,80 @@ function setDonorType(type, preFill) {
 }
 function toggleOtherAuthor(val){
   var f=document.getElementById('other-author-field'); if(f)f.style.display=val==='__other__'?'block':'none';
+  if (val && val!=='__other__') fillFromAuthorInfo(val);
+}
+// Soir\u00e9e authors already gave their logo and website in Author Info, so pull them
+// in when that author is picked as the donor (only into fields that are still empty).
+function driveThumbUrl(u,w){
+  var m=String(u||'').match(/drive\.google\.com\/file\/d\/([\w-]+)/)||String(u||'').match(/drive\.google\.com\/(?:open|uc)\?[^#]*id=([\w-]+)/);
+  return m ? 'https://drive.google.com/thumbnail?id='+m[1]+'&sz=w'+(w||200) : '';
+}
+async function fillFromAuthorInfo(name){
+  try{
+    var res=await fetch(DONOR_LOGO_API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'getAuthorData',authorName:name})});
+    var j=await res.json();
+    if(!j||!j.success||!j.exists) return;
+    if(currentDonorName()!==name) return; // they picked someone else while this loaded
+    var li=document.getElementById('pm-logo'), lp=document.getElementById('pm-logo-preview'), ws=document.getElementById('pm-website');
+    var got=[];
+    if(li && !li.value.trim() && j.logoUrl){
+      li.value=j.logoUrl;
+      var t=driveThumbUrl(j.logoUrl,200);
+      if(lp) lp.innerHTML=(t?'<img src="'+t+'" style="height:50px;border-radius:6px;border:.5px solid var(--border)"> ':'')+
+        '<span style="font-size:11px;color:var(--text2)">Using the logo from their Author Info</span>';
+      got.push('logo');
+    }
+    var site=(j.data&&j.data.linkWebsite)||'';
+    if(ws && !ws.value.trim() && site){ ws.value=site; got.push('website'); }
+    if(got.length) showToast('Added '+name+'\u2019s '+got.join(' and ')+' from Author Info');
+  }catch(e){ /* no Author Info data available: fine, upload or paste instead */ }
+}
+// Full-resolution donor logos are saved to Google Drive through the same Apps
+// Script as Author Info (needs the "uploadDonorLogo" action in Code.gs).
+var DONOR_LOGO_API = "https://script.google.com/macros/s/AKfycbx243aXYN1O8ABOO729RyMlgKV68OzKqVtKUqPetqVPwSKQ_5wCjI71_vyEG6y_K66i/exec";
+function fileToBase64(file){
+  return new Promise(function(resolve,reject){
+    var r=new FileReader();
+    r.onload=function(){ resolve(String(r.result).split(',')[1]||''); };
+    r.onerror=function(){ reject(r.error); };
+    r.readAsDataURL(file);
+  });
+}
+function currentDonorName(){
+  var v=document.getElementById('pm-donor')?.value?.trim()||'';
+  if (v==='__other__') v=document.getElementById('pm-other-author')?.value?.trim()||'';
+  return v;
 }
 async function handleLogoUpload(input){
   var file=input.files[0]; if(!file)return;
-  showToast('Processing logo\u2026');
-  var full=await compressImage(file,800,0.8);
-  var thumb=await makeThumbnail(full,200,0.7);
-  var li=document.getElementById('pm-logo'); if(li)li.value=full;
-  var lp=document.getElementById('pm-logo-preview'); if(lp)lp.innerHTML='<img src="'+thumb+'" style="height:50px;border-radius:6px;border:.5px solid var(--border)">';
-  showToast('Logo ready \u2713'); input.value='';
+  var donor=currentDonorName();
+  if(!donor){ showToast('Enter the donor name first, then upload the logo','error'); input.value=''; return; }
+  if(file.size>30*1024*1024){ showToast('That file is over 30 MB \u2014 please use a smaller one','error'); input.value=''; return; }
+  showToast('Saving full-size logo to Drive\u2026');
+  var li=document.getElementById('pm-logo'), lp=document.getElementById('pm-logo-preview');
+  var isRaster=/^image\/(png|jpe?g|webp|gif)$/.test(file.type);
+  var thumb=null, small=null;
+  if(isRaster){ small=await compressImage(file,800,0.8); thumb=await makeThumbnail(small,200,0.7); }
+  try{
+    var b64=await fileToBase64(file);
+    var res=await fetch(DONOR_LOGO_API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'uploadDonorLogo',donor:donor,fileName:file.name,mimeType:file.type,base64:b64})});
+    var j=await res.json();
+    if(!j.success) throw new Error(j.error||'Upload failed');
+    if(li) li.value=j.url;
+    if(lp) lp.innerHTML=(thumb?'<img src="'+thumb+'" style="height:50px;border-radius:6px;border:.5px solid var(--border)"> ':'')+
+      '<span style="font-size:11px;color:var(--text2)">Saved to Drive: '+escHtml(j.name||'')+'</span>';
+    showToast('Full-size logo saved to Drive \u2713');
+  }catch(e){
+    // Drive unreachable: keep a smaller copy so nothing is lost, but make it obvious.
+    if(small){
+      if(li) li.value=small;
+      if(lp) lp.innerHTML='<img src="'+thumb+'" style="height:50px;border-radius:6px;border:.5px solid var(--border)"> <span style="font-size:11px;color:var(--danger,#c62828)">Only a small copy was kept \u2014 upload again</span>';
+    }
+    showToast('Could not reach Drive ('+(e.message||'error')+'). Try again.','error');
+  }
+  input.value='';
 }
 async function handlePhotoFile(input){
   var files=Array.from(input.files);
@@ -1473,17 +1690,32 @@ async function doAddPrize(){
   if(!gen.ok){showToast(prizeValidationMessage(itemType),'error');return;}
   var cat=document.getElementById('pm-cat')?.value;
   if(!cat){showToast('Please select a category','error');return;}
+  var qty=parseInt(document.getElementById('pm-qty')?.value)||1;
+  var alloc=null;
+  try{ alloc=JSON.parse(document.getElementById('pm-cat-alloc')?.value||'null'); }catch(e){}
+  if(alloc && qty===1) alloc=null;
+  if(alloc){
+    var sum=0; for(var ck in alloc) sum+=alloc[ck];
+    if(sum!==qty){
+      document.getElementById('pm-cat-alloc').value=''; document.getElementById('pm-cat-note').textContent='';
+      showToast('Quantity changed \u2014 pick the category again','error'); return;
+    }
+  }
   showToast('Saving\u2026');
   var donor=getDonorFields();
-  await addPrize({name:gen.name,cat:cat,
+  var base={name:gen.name,
     itemType:itemType,
     donationTagType:gen.donationTagType,
     value:parseMoney(document.getElementById('pm-value')?.value),
     paid:parseMoney(document.getElementById('pm-paid')?.value),
-    qty:parseInt(document.getElementById('pm-qty')?.value)||1,
     loc:document.getElementById('pm-loc')?.value?.trim()||'',
     notes:document.getElementById('pm-notes')?.value?.trim()||'',
-    photos:[..._pendingPhotos],...gen.extra,...donor});
+    photos:[..._pendingPhotos],...gen.extra,...donor};
+  if(alloc){
+    for(var c in alloc){ await addPrize({...base,cat:c,qty:alloc[c]}); }
+  } else {
+    await addPrize({...base,cat:cat,qty:qty});
+  }
   _pendingPhotos=[]; _editMode=false; _currentPrizeId=0;
   closeModal(); renderPrizes(); renderGoals();
 }
@@ -1500,16 +1732,25 @@ async function doEditPrize(id){
     tagAttached:document.getElementById('pm-tagAttached')?.checked||false,
     onTote:document.getElementById('pm-onTote')?.checked||false,
   };
-  await updatePrize(id,{name:gen.name,
-    cat:document.getElementById('pm-cat')?.value||'',
+  var newCat=document.getElementById('pm-cat')?.value||'';
+  var qty=parseInt(document.getElementById('pm-qty')?.value)||1;
+  var moveK=parseInt(document.getElementById('pm-cat-split')?.value)||0;
+  var orig=getPrize(id);
+  var fields={name:gen.name,
     itemType:itemType,
     donationTagType:gen.donationTagType,
     value:parseMoney(document.getElementById('pm-value')?.value),
     paid:parseMoney(document.getElementById('pm-paid')?.value),
-    qty:parseInt(document.getElementById('pm-qty')?.value)||1,
     loc:document.getElementById('pm-loc')?.value?.trim()||'',
     notes:document.getElementById('pm-notes')?.value?.trim()||'',
-    photos:[..._pendingPhotos],...gen.extra,...donor,...tagFields});
+    photos:[..._pendingPhotos],...gen.extra,...donor,...tagFields};
+  if(moveK>0 && moveK<qty && orig && orig.cat!==newCat){
+    // Only part of the stack changes category: the new category gets its own record.
+    await addPrize({...fields,cat:newCat,qty:moveK});
+    await updatePrize(id,{...fields,cat:orig.cat,qty:qty-moveK});
+  } else {
+    await updatePrize(id,{...fields,cat:newCat,qty:qty});
+  }
   _pendingPhotos=[]; _editMode=false; _currentPrizeId=0;
   closeModal(); showToast('Prize saved!'); renderPrizes(); renderGoals();
 }
