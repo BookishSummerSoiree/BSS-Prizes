@@ -52,6 +52,16 @@ function setSortMode(mode){
 // Secondary sort applied within whatever grouping already exists (e.g.
 // search-relevance tiers). With no sort mode active, this is a no-op and
 // the list keeps its natural order.
+// A bundle has no value of its own: it is worth its items added together.
+function sortValueOf(p){
+  if (p && p.isBundle) {
+    var bName = p.name || String(p.id), bItems = p.bundleItems || [];
+    return getPrizes().filter(function(x){
+      return !x.isBundle && (x.bundledInto===bName || bItems.indexOf(x.id)>-1 || bItems.indexOf(String(x.id))>-1);
+    }).reduce(function(s,x){ return s+(+x.value||0); }, 0);
+  }
+  return +(p && p.value) || 0;
+}
 function sortComparator(a, b){
   if (_sortMode === 'az') {
     return (a.name||'').localeCompare(b.name||'');
@@ -64,7 +74,7 @@ function sortComparator(a, b){
   if (_sortMode === 'value') {
     // Prizes with no value yet come first (so they're easy to find and fill
     // in), then everything else from lowest to highest value.
-    var av = +a.value || 0, bv = +b.value || 0;
+    var av = sortValueOf(a), bv = sortValueOf(b);
     if (!av !== !bv) return !av ? -1 : 1;
     if (av !== bv) return av - bv;
     return (a.name||'').localeCompare(b.name||'');
@@ -308,8 +318,24 @@ function buildPrizeList(allPrizes, bundles, individual, bundled, searchFilter, c
     return (grp.length > 1 || totalQty > 1) ? stackCard(grp) : prizeCard(grp[0]);
   }).join('');
 
-  var html = bFiltered.map(function(b){ return bundleCard(b); }).join('') +
-             individualHtml +
+  var topHtml;
+  if (_sortMode) {
+    // Sorting on: a bundle sorts like any single prize (by its own category,
+    // value, name or donor) instead of sitting in its own block at the top.
+    var entries = [];
+    bFiltered.forEach(function(b){ entries.push({rep:b, html:bundleCard(b)}); });
+    groupOrder.forEach(function(key){
+      var grp = groups[key];
+      var tq = grp.reduce(function(s,p){ return s+(+p.qty||1); }, 0);
+      entries.push({rep:grp[0], html:(grp.length > 1 || tq > 1) ? stackCard(grp) : prizeCard(grp[0])});
+    });
+    entries.forEach(function(e,i){ e.i = i; });
+    entries.sort(function(x,y){ return sortComparator(x.rep, y.rep) || (x.i - y.i); });
+    topHtml = entries.map(function(e){ return e.html; }).join('');
+  } else {
+    topHtml = bFiltered.map(function(b){ return bundleCard(b); }).join('') + individualHtml;
+  }
+  var html = topHtml +
              bndFiltered.map(function(p){ return prizeCard(p); }).join('');
   if (!html) html = '<div style="text-align:center;padding:3rem;color:var(--text3)">No prizes found.</div>';
   el.innerHTML = html;
