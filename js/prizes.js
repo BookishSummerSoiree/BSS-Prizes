@@ -240,7 +240,10 @@ function stackCard(grp) {
             '<div style="font-size:14px;font-weight:600">'+escHtml(name||'Unnamed prize')+'</div>'+
             '<div style="font-size:11px;color:var(--text2);margin-top:2px">Total qty '+totalQty+' \u00b7 Tap to '+(isExpanded?'collapse':'expand')+'</div>'+
           '</div>'+
-          '<div style="flex-shrink:0"><i class="ti ti-chevron-'+(isExpanded?'up':'down')+'" style="font-size:14px;color:var(--text3)"></i></div>'+
+          '<div style="flex-shrink:0;display:flex;align-items:center;gap:4px">'+
+            '<button type="button" title="Edit" aria-label="Edit" onclick="event.stopPropagation();openEditPrize('+grp[0].id+')" style="border:none;background:transparent;padding:6px;cursor:pointer;color:var(--text2);line-height:1"><i class="ti ti-pencil" style="font-size:17px"></i></button>'+
+            '<i class="ti ti-chevron-'+(isExpanded?'up':'down')+'" style="font-size:14px;color:var(--text3)"></i>'+
+          '</div>'+
         '</div>'+
       '</div>'+
     '</div>';
@@ -981,11 +984,13 @@ function askCategoryAlloc(N, start){
       return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><span>'+escHtml(catLabelOf(c))+'</span>'+
         '<input type="number" class="pm-alloc" data-cat="'+escHtml(c)+'" min="0" inputmode="numeric" style="width:90px" value="'+((start&&start[c])||'')+'" oninput="pmAllocUpdate('+N+')"></div>';
     }).join('');
-    pmSubOpen('<h3>Split '+N+' across categories</h3>'+
-      '<div id="pm-alloc-math" style="font-weight:600;margin:0 0 12px"></div>'+rows+
-      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'+
-        '<button class="btn" onclick="pmSubDone(null)">Cancel</button>'+
-        '<button class="btn primary" id="pm-alloc-save" onclick="pmAllocSave('+N+')">Save</button></div>');
+    pmSubOpen('<h3>Split '+N+' across categories</h3>'+rows+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px">'+
+        '<div id="pm-alloc-math" style="font-weight:600;font-size:13px"></div>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button class="btn" onclick="pmSubDone(null)">Cancel</button>'+
+          '<button class="btn" id="pm-alloc-save" onclick="pmAllocSave('+N+')">Save</button></div>'+
+      '</div>');
     pmAllocUpdate(N);
   });
 }
@@ -995,12 +1000,16 @@ function pmAllocRead(){
 }
 function pmAllocUpdate(N){
   var a=pmAllocRead(), sum=0; for(var k in a) sum+=a[k];
-  var left=N-sum, m=document.getElementById('pm-alloc-math'), b=document.getElementById('pm-alloc-save');
+  var left=N-sum, ok=(left===0), m=document.getElementById('pm-alloc-math'), b=document.getElementById('pm-alloc-save');
   if(m){
-    m.textContent = left===0 ? 'Assigned '+sum+' of '+N+' ✓' : (left>0 ? 'Assigned '+sum+' of '+N+' · '+left+' left' : 'Assigned '+sum+' of '+N+' · '+(-left)+' too many');
-    m.style.color = left===0 ? 'var(--success, #2e7d32)' : (left<0 ? 'var(--danger, #c62828)' : 'var(--text)');
+    m.textContent = ok ? 'Assigned '+sum+' of '+N+' \u2713' : (left>0 ? 'Assigned '+sum+' of '+N+' \u00b7 '+left+' left' : 'Assigned '+sum+' of '+N+' \u00b7 '+(-left)+' too many');
+    m.style.color = ok ? '#2e7d32' : '#c62828';
   }
-  if(b) b.disabled = left!==0;
+  if(b){
+    b.disabled = !ok;
+    if(ok){ b.style.cssText='background:#2e7d32;color:#fff;border-color:#2e7d32;cursor:pointer;opacity:1'; }
+    else { b.style.cssText='background:transparent;color:#c4c4c4;border-color:#e3e3e3;cursor:not-allowed;opacity:1;pointer-events:none'; }
+  }
 }
 function pmAllocSave(N){
   var a=pmAllocRead(), sum=0; for(var k in a) sum+=a[k];
@@ -1330,9 +1339,9 @@ function _selectItemTypeInner(t, preFill) {
   el.innerHTML =
     nameSection+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">'+
-      '<div class="field"><label>Value ($)</label><input type="text" inputmode="decimal" id="pm-value" value="'+((pf&&pf.value)||'')+'" placeholder="0.00"></div>'+
-      '<div class="field"><label>Amount paid ($)</label><input type="text" inputmode="decimal" id="pm-paid" value="'+((pf&&pf.paid)||'')+'" placeholder="0.00"></div>'+
-      '<div class="field"><label>Qty</label><input type="number" id="pm-qty" value="'+((pf&&pf.qty)||'')+'" placeholder="1" min="1"></div>'+
+      '<div class="field"><label>Value ($)</label><input type="text" inputmode="decimal" id="pm-value" value="'+((pf&&pf.value)||'')+'" placeholder="0.00" enterkeyhint="next" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'pm-paid\')?.focus()}"></div>'+
+      '<div class="field"><label>Amount paid ($)</label><input type="text" inputmode="decimal" id="pm-paid" value="'+((pf&&pf.paid)||'')+'" placeholder="0.00" enterkeyhint="next" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'pm-qty\')?.focus()}"></div>'+
+      '<div class="field"><label>Qty</label><input type="text" inputmode="numeric" pattern="[0-9]*" id="pm-qty" value="'+((pf&&pf.qty)||'')+'" placeholder="1" enterkeyhint="done" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"></div>'+
     '</div>'+
     '<div class="field"><label>Category</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+catPills+'</div>'+
       '<input type="hidden" id="pm-cat" value="'+escHtml(defaultCat)+'">'+
@@ -1363,7 +1372,7 @@ function _selectItemTypeInner(t, preFill) {
   renderPhotoPreview();
 
   // Add flow only: just finished the last staged field, so start on Value.
-  if (!isEdit) { document.getElementById('pm-value')?.focus(); }
+  if (!isEdit) { setTimeout(function(){ document.getElementById('pm-value')?.focus(); },60); }
 
   if (pf&&pf.donor) {
     setTimeout(function(){
@@ -1479,19 +1488,15 @@ function setDonorType(type, preFill) {
   var authors=getAuthors();
   var html='';
   if(isAuthor){
-    html+='<div class="field"><label>Author</label>'+
-      '<select id="pm-donor" onchange="toggleOtherAuthor(this.value)">'+
-      '<option value="">— Select author —</option>'+
-      authors.map(function(a){return '<option>'+escHtml(a)+'</option>';}).join('')+
-      '<option value="__other__">Other (enter name)</option>'+
-      '</select></div>'+
-      '<div id="other-author-field" style="display:none" class="field"><label>Author name</label><input type="text" id="pm-other-author" placeholder="Full name"></div>';
+    // Soir\u00e9e authors' prizes arrive automatically from Author Info, so this is for
+    // authors who are NOT Soir\u00e9e authors: just type the name.
+    html+='<div class="field"><label>Author\'s name</label><input type="text" id="pm-donor" placeholder="Author\'s name" autocapitalize="words" onblur="toggleOtherAuthor(this.value.trim())"></div>';
   } else {
     html+='<div class="field"><label>Business name</label><input type="text" id="pm-donor" placeholder="Business name"></div>';
   }
   html+=
     '<div class="field"><label>Donor website (for QR code)</label><input type="text" id="pm-website" placeholder="https://\u2026"></div>'+
-    '<div class="field"><label>QR type</label><select id="pm-qrtype"><option value="website">Website</option><option value="instagram">Instagram profile</option></select></div>'+
+    '<div class="field"><label>QR type</label><select id="pm-qrtype"><option value="website">Website</option><option value="instagram">Instagram profile</option><option value="facebook">Facebook profile</option></select></div>'+
     '<div class="field"><label>Pronoun</label><select id="pm-pronoun"><option value="their">their</option><option value="her">her</option><option value="his">his</option></select></div>'+
     '<div class="field"><label>Logo</label>'+
       '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+
@@ -1503,6 +1508,9 @@ function setDonorType(type, preFill) {
     '</div>';
   el.innerHTML=html;
   el.dataset.donorType=type;
+  // Tapped by the user (not the automatic call while the form draws): start typing the name.
+  if (isAuthor && !preFill) { var pr0=document.getElementById('pm-pronoun'); if(pr0) pr0.value='her'; }
+  if (arguments.length===1) setTimeout(function(){ document.getElementById('pm-donor')?.focus(); },30);
 }
 function toggleOtherAuthor(val){
   var f=document.getElementById('other-author-field'); if(f)f.style.display=val==='__other__'?'block':'none';
@@ -1530,8 +1538,12 @@ async function fillFromAuthorInfo(name){
         '<span style="font-size:11px;color:var(--text2)">Using the logo from their Author Info</span>';
       got.push('logo');
     }
-    var site=(j.data&&j.data.linkWebsite)||'';
-    if(ws && !ws.value.trim() && site){ ws.value=site; got.push('website'); }
+    // Website first; if none, Instagram, then Facebook (those say "profile" on the tag)
+    var d=j.data||{}, qs=document.getElementById('pm-qrtype');
+    var site=(d.linkWebsite||'').trim(), qt='website';
+    if(!site && (d.linkInstagram||'').trim()){ site=d.linkInstagram.trim(); qt='instagram'; }
+    if(!site && (d.linkFacebook||'').trim()){ site=d.linkFacebook.trim(); qt='facebook'; }
+    if(ws && !ws.value.trim() && site){ ws.value=site; if(qs) qs.value=qt; got.push(qt==='website'?'website':qt+' link'); }
     if(got.length) showToast('Added '+name+'\u2019s '+got.join(' and ')+' from Author Info');
   }catch(e){ /* no Author Info data available: fine, upload or paste instead */ }
 }
