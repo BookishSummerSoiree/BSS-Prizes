@@ -167,6 +167,18 @@ function renderPMSettings() {
   if (!el) return;
   el.innerHTML = `
     <div class="card">
+      <div class="card-title">Backups</div>
+      <div id="pm-bk-last" style="font-size:13px;color:var(--text2);margin-bottom:8px">Loading…</div>
+      <button class="btn primary" onclick="doBackup()"><i class="ti ti-device-floppy"></i> Back up now</button>
+      <div id="pm-bk-list" style="margin-top:12px"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">Backups are taken automatically (at most every 4 hours) and the last ${SNAP_KEEP} are kept.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Recently deleted</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Deleted prizes are kept for ${TRASH_DAYS} days so you can bring them back.</div>
+      <div id="pm-trash-list">Loading…</div>
+    </div>
+    <div class="card">
       <div class="card-title">Firebase connection</div>
       <div class="field"><label>Database URL</label>
         <input type="text" id="pm-firebase" value="${escHtml(window.FIREBASE_DB_URL||'')}"
@@ -176,6 +188,41 @@ function renderPMSettings() {
       <button class="btn primary" onclick="savePMSettings()"><i class="ti ti-check"></i> Save</button>
     </div>
     <div style="height:300px"></div>`;
+  fillPMBackups();
+  fillPMTrash();
+}
+
+async function fillPMBackups() {
+  const snaps = await listSnapshots();
+  const last = document.getElementById('pm-bk-last'); const list = document.getElementById('pm-bk-list');
+  if (!last || !list) return;
+  last.innerHTML = snaps.length
+    ? 'Last backup: <b>'+escHtml(fmtWhen(snaps[0].ts))+'</b> · '+snaps[0].count+' prizes'
+    : '<b>No backups yet.</b> Tap “Back up now”.';
+  list.innerHTML = snaps.map(function(s){
+    const missing = null;
+    return '<div style="border-top:1px solid var(--border);padding:8px 0">'+
+      '<div style="font-size:13px"><b>'+escHtml(fmtWhen(s.ts))+'</b> · '+s.count+' prizes'+(s.label&&s.label!=='automatic'?' · '+escHtml(s.label):'')+'</div>'+
+      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'+
+        '<button class="btn" onclick="restoreMissingFromSnapshot(\''+s.key+'\')">Bring back missing prizes</button>'+
+        '<button class="btn danger" onclick="restoreAllFromSnapshot(\''+s.key+'\')">Replace everything</button>'+
+      '</div></div>';
+  }).join('');
+}
+
+async function fillPMTrash() {
+  const items = await listTrash();
+  const el = document.getElementById('pm-trash-list');
+  if (!el) return;
+  if (!items.length) { el.innerHTML = '<div style="font-size:13px;color:var(--text3)">Nothing deleted recently.</div>'; return; }
+  el.innerHTML = items.map(function(t){
+    const p = t.prize;
+    return '<div style="border-top:1px solid var(--border);padding:8px 0">'+
+      '<div style="font-size:13px"><b>'+escHtml(p.name||'(no name)')+'</b>'+(p.qty>1?' × '+p.qty:'')+(p.donor?' · '+escHtml(p.donor):'')+(p.cat?' · '+escHtml(p.cat):'')+'</div>'+
+      '<div style="font-size:11px;color:var(--text3)">Deleted '+escHtml(fmtWhen(t.deletedAt))+'</div>'+
+      '<div style="display:flex;gap:6px;margin-top:6px"><button class="btn primary" onclick="restoreFromTrash(\''+t.key+'\')">Restore</button>'+
+      '<button class="btn" onclick="purgeTrashItem(\''+t.key+'\')">Delete forever</button></div></div>';
+  }).join('');
 }
 
 function savePMSettings() {

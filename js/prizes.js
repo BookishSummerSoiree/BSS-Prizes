@@ -17,7 +17,7 @@ var _filterDonations = false; // "Donations" toggle — layers on top of categor
 var _filterItemType = ''; // '' = no filter; otherwise an exact itemType string
 var _sortMode = null; // null | 'az' | 'category' | 'value' | 'donations'
 
-const CATEGORIES = ['BINGO','Raffle','Medium','Small','SWAG Bag','Uncategorized'];
+const CATEGORIES = ['BINGO','Raffle','Medium','Small','Small add-on','SWAG Bag','Uncategorized'];
 const CAT_LABELS = {'SWAG Bag':'SWAG', 'Uncategorized':'Unassigned'}; // display-only relabeling; underlying cat value is unchanged
 
 function toggleDonationsFilter(){
@@ -311,7 +311,7 @@ function buildPrizeList(allPrizes, bundles, individual, bundled, searchFilter, c
   // bookkeeping needed to "remember" that two records used to be one.
   var groups = {}; var groupOrder = [];
   iFiltered.forEach(function(p){
-    var key = p.name||'';
+    var key = (p.name||'')+'\u0001'+(p.donor||'');
     if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
     groups[key].push(p);
   });
@@ -727,7 +727,7 @@ async function detachFromBundle(bundleName) {
     var br = getPrizes().find(function(q){ return q.isBundle && q.name===bundleName; });
     if (br) {
       for (var i=0;i<remaining.length;i++) await updatePrize(remaining[i].id,{bundledInto:null});
-      await deletePrize(br.id);
+      await deletePrize(br.id,true);
       showToast('Bundle disbanded — only 1 item left');
       return true;
     }
@@ -1871,7 +1871,7 @@ async function doEditPrize(id){
 // Everything that shows as one stack (same name, not in a bundle) counts as one prize with a quantity.
 function stackOf(p){
   if (p.isBundle || p.bundledInto) return [p];
-  return getPrizes().filter(function(x){ return x && !x.isBundle && !x.bundledInto && (x.name||'')===(p.name||''); });
+  return getPrizes().filter(function(x){ return x && !x.isBundle && !x.bundledInto && (x.name||'')===(p.name||'') && (x.donor||'')===(p.donor||''); });
 }
 function askDeleteChoice(N, name){
   return new Promise(function(resolve){
@@ -1924,8 +1924,9 @@ async function confirmDeletePrize(id){
   if(!a) return;
   var base=grp.find(function(x){return x.id===id;})||grp[0];
   var keys=Object.keys(a);
+  await trashCopy(base,k);
   await updatePrize(base.id,{cat:keys[0],qty:a[keys[0]]});
   for(var j=1;j<keys.length;j++) await addPrize(prizeCopyFields(base,{cat:keys[j],qty:a[keys[j]]}));
-  for(var m=0;m<grp.length;m++){ if(grp[m].id!==base.id) await deletePrize(grp[m].id); }
+  for(var m=0;m<grp.length;m++){ if(grp[m].id!==base.id) await deletePrize(grp[m].id,true); }
   closeModal(); showToast('Deleted '+k+'; '+R+' remain'); renderPrizes(); renderGoals();
 }
