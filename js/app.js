@@ -170,8 +170,12 @@ function renderPMSettings() {
       <div class="card-title">Backups</div>
       <div id="pm-bk-last" style="font-size:13px;color:var(--text2);margin-bottom:8px">Loading…</div>
       <button class="btn primary" onclick="doBackup()"><i class="ti ti-device-floppy"></i> Back up now</button>
-      <div id="pm-bk-list" style="margin-top:12px"></div>
-      <div style="font-size:11px;color:var(--text3);margin-top:8px">Backups are taken automatically (at most every 4 hours) and the last ${SNAP_KEEP} are kept.</div>
+      <button class="btn" id="pm-bk-toggle" style="margin-top:10px;font-size:12px;padding:5px 10px" onclick="toggleBackupList()">Show the last backups</button>
+      <div id="pm-bk-list" style="margin-top:6px;display:none"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5">
+        A backup is a saved copy of all your prizes at that moment. They're taken automatically (at most every 4 hours), and the newest ${SNAP_KEEP} are kept, all listed above, newest first.<br>
+        <b>See what's different from now</b> shows which prizes are in that backup but not in the app anymore, so you can pick the ones to bring back. Nothing else changes.<br>
+        <b>Go back to this backup</b> replaces ALL your current prizes with that copy (anything added or changed since is lost).</div>
     </div>
     <div class="card">
       <div class="card-title">Recently deleted</div>
@@ -192,22 +196,53 @@ function renderPMSettings() {
   fillPMTrash();
 }
 
+function bkCount(s){ return s.units ? s.units+' prizes ('+s.count+' entries)' : s.count+' entries'; }
+
+function toggleBackupList(){ window._bkOpen = !window._bkOpen; fillPMBackups(); }
+
 async function fillPMBackups() {
   const snaps = await listSnapshots();
   const last = document.getElementById('pm-bk-last'); const list = document.getElementById('pm-bk-list');
   if (!last || !list) return;
   last.innerHTML = snaps.length
-    ? 'Last backup: <b>'+escHtml(fmtWhen(snaps[0].ts))+'</b> · '+snaps[0].count+' prizes'
+    ? 'Last backup: <b>'+escHtml(fmtWhen(snaps[0].ts))+'</b> · '+bkCount(snaps[0])
     : '<b>No backups yet.</b> Tap “Back up now”.';
+  const tg = document.getElementById('pm-bk-toggle');
+  if (tg) { tg.textContent = (window._bkOpen?'Hide':'Show')+' the last '+snaps.length+' backup'+(snaps.length===1?'':'s'); }
+  list.style.display = window._bkOpen ? 'block' : 'none';
   list.innerHTML = snaps.map(function(s){
-    const missing = null;
-    return '<div style="border-top:1px solid var(--border);padding:8px 0">'+
-      '<div style="font-size:13px"><b>'+escHtml(fmtWhen(s.ts))+'</b> · '+s.count+' prizes'+(s.label&&s.label!=='automatic'?' · '+escHtml(s.label):'')+'</div>'+
-      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'+
-        '<button class="btn" onclick="restoreMissingFromSnapshot(\''+s.key+'\')">Bring back missing prizes</button>'+
-        '<button class="btn danger" onclick="restoreAllFromSnapshot(\''+s.key+'\')">Replace everything</button>'+
+    return '<div style="border-top:1px solid var(--border);padding:5px 0">'+
+      '<div style="font-size:11px"><b>'+escHtml(fmtWhen(s.ts))+'</b> · '+bkCount(s)+(s.label&&s.label!=='automatic'?' · '+escHtml(s.label):'')+'</div>'+
+      '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">'+
+        '<button class="btn primary" style="font-size:11px;padding:4px 9px" onclick="showSnapshotDiff(\''+s.key+'\')">See what\'s different from now</button>'+
+        '<button class="btn danger" style="font-size:11px;padding:4px 9px" onclick="restoreAllFromSnapshot(\''+s.key+'\')">Go back to this backup</button>'+
       '</div></div>';
   }).join('');
+}
+
+async function showSnapshotDiff(key){
+  const d = await snapshotMissing(key);
+  if (!d) { showToast('Backup not found','error'); return; }
+  window._diffKey = key;
+  const rows = d.missing.length ? d.missing.map(function(p){
+    return '<label style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border);font-size:13px">'+
+      '<input type="checkbox" class="pm-diff-cb" value="'+escHtml(String(p.id))+'" checked style="margin-top:3px">'+
+      '<span><b>'+escHtml(p.name||'(no name)')+'</b>'+(p.qty>1?' × '+p.qty:'')+(p.donor?' · '+escHtml(p.donor):'')+(p.cat?' · '+escHtml(catLabelOf(p.cat)):'')+'</span></label>';
+  }).join('') : '<div style="font-size:13px;color:var(--text2);padding:6px 0">Nothing is missing. Every prize in this backup is still in the app.</div>';
+  pmSubOpen('<h3>Backup from '+escHtml(fmtWhen(d.snap.ts))+'</h3>'+
+    '<p style="font-size:12px;color:var(--text2);margin:0 0 8px">'+(d.missing.length
+      ? d.missing.length+' prize'+(d.missing.length===1?'':'s')+' in this backup '+(d.missing.length===1?'is':'are')+' no longer in the app (deleted since then). Untick any you don\'t want back.'
+      : '')+(d.added?' '+d.added+' prize'+(d.added===1?'':'s')+' were added after this backup.':'')+'</p>'+
+    '<div style="max-height:45vh;overflow:auto">'+rows+'</div>'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      (d.missing.length?'<button class="btn primary" onclick="applySnapshotDiff()">Bring back selected</button>':'')+
+      '<button class="btn" onclick="pmSubClose()">Close</button></div>');
+}
+async function applySnapshotDiff(){
+  const ids = Array.prototype.map.call(document.querySelectorAll('.pm-diff-cb:checked'), function(c){ return c.value; });
+  if (!ids.length) { showToast('Tick at least one prize','error'); return; }
+  pmSubClose();
+  await restoreSelectedFromSnapshot(window._diffKey, ids);
 }
 
 async function fillPMTrash() {
@@ -215,14 +250,57 @@ async function fillPMTrash() {
   const el = document.getElementById('pm-trash-list');
   if (!el) return;
   if (!items.length) { el.innerHTML = '<div style="font-size:13px;color:var(--text3)">Nothing deleted recently.</div>'; return; }
-  el.innerHTML = items.map(function(t){
+  // Identical items (same name + donor) show as one line with a total quantity
+  const groups = {}, order = [];
+  items.forEach(function(t){
     const p = t.prize;
+    const g = (p.name||'')+'\u0001'+(p.donor||'');
+    if (!groups[g]) { groups[g] = {keys:[], qty:0, name:p.name, donor:p.donor, cats:{}, at:t.deletedAt}; order.push(g); }
+    groups[g].keys.push(t.key);
+    groups[g].qty += Math.max(1, parseInt(p.qty,10) || 1);
+    groups[g].cats[p.cat||''] = 1;
+    groups[g].at = Math.max(groups[g].at||0, t.deletedAt||0);
+  });
+  window._trashGroups = order.map(function(g){ return groups[g]; });
+  el.innerHTML = window._trashGroups.map(function(g, i){
+    const cats = Object.keys(g.cats).filter(Boolean);
     return '<div style="border-top:1px solid var(--border);padding:8px 0">'+
-      '<div style="font-size:13px"><b>'+escHtml(p.name||'(no name)')+'</b>'+(p.qty>1?' × '+p.qty:'')+(p.donor?' · '+escHtml(p.donor):'')+(p.cat?' · '+escHtml(p.cat):'')+'</div>'+
-      '<div style="font-size:11px;color:var(--text3)">Deleted '+escHtml(fmtWhen(t.deletedAt))+'</div>'+
-      '<div style="display:flex;gap:6px;margin-top:6px"><button class="btn primary" onclick="restoreFromTrash(\''+t.key+'\')">Restore</button>'+
-      '<button class="btn" onclick="purgeTrashItem(\''+t.key+'\')">Delete forever</button></div></div>';
+      '<div style="font-size:13px"><b>'+escHtml(g.name||'(no name)')+'</b>'+(g.qty>1?' × '+g.qty:'')+(g.donor?' · '+escHtml(g.donor):'')+(cats.length?' · '+escHtml(cats.length>1?'Mixed categories':catLabelOf(cats[0])):'')+'</div>'+
+      '<div style="font-size:11px;color:var(--text3)">Deleted '+escHtml(fmtWhen(g.at))+'</div>'+
+      '<div style="display:flex;gap:6px;margin-top:6px"><button class="btn primary" onclick="restoreTrashUI('+i+')">Restore</button>'+
+      '<button class="btn" onclick="purgeTrashUI('+i+')">Delete forever</button></div></div>';
   }).join('');
+}
+
+function askRestoreChoice(N, name){
+  return new Promise(function(resolve){
+    _pmSubResolve = resolve;
+    pmSubOpen('<h3>Restore '+escHtml(name||'this prize')+'?</h3>'+
+      '<p style="font-size:13px;color:var(--text2);margin:0 0 12px">There are '+N+' of these in Recently deleted. Restore:</p>'+
+      '<div style="display:flex;flex-direction:column;gap:8px">'+
+        '<button class="btn primary" onclick="pmSubDone('+N+')">All '+N+' of them</button>'+
+        '<button class="btn" onclick="document.getElementById(\'pm-rst-row\').style.display=\'flex\';document.getElementById(\'pm-rst-n\').focus()">Some of them</button>'+
+        '<div id="pm-rst-row" style="display:none;align-items:center;gap:8px"><input type="number" id="pm-rst-n" min="1" max="'+(N-1)+'" style="width:90px" placeholder="how many"> <span>/ '+N+'</span> <button class="btn primary" onclick="pmRstApply('+N+')">Restore</button></div>'+
+        '<button class="btn" onclick="pmSubDone(null)">Cancel</button>'+
+      '</div>');
+  });
+}
+function pmRstApply(N){
+  var n=parseInt(document.getElementById('pm-rst-n')?.value);
+  if(!n||n<1||n>N){ showToast('Enter a number from 1 to '+N,'error'); return; }
+  pmSubDone(n);
+}
+async function restoreTrashUI(i){
+  const g = (window._trashGroups||[])[i]; if(!g) return;
+  let k = g.qty;
+  if (g.qty > 1) { k = await askRestoreChoice(g.qty, g.name); if (!k) return; }
+  await restoreTrashGroup(g.keys, k);
+}
+async function purgeTrashUI(i){
+  const g = (window._trashGroups||[])[i]; if(!g) return;
+  if (!confirm('Permanently delete '+(g.qty>1?'all '+g.qty+' of these':'this')+'? It cannot be restored after this.')) return;
+  for (const k of g.keys) await dbDelete('trash/'+k);
+  renderPMSettings();
 }
 
 function savePMSettings() {

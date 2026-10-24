@@ -52,6 +52,24 @@ async function loadFullPhotos(id) {
   } catch(e) {}
 }
 
+// How many "real" prizes there are. A bundle counts as ONE prize and the items
+// inside it aren't counted again; Unassigned, Small add-ons and SWAG are
+// tallied separately (they're not main prizes).
+function prizeTally(list) {
+  var t = {prizes:0, unassigned:0, addons:0, swag:0, bundles:0, inBundles:0};
+  (list || getPrizes()).forEach(function(p){
+    if (!p) return;
+    if (p.bundledInto && !p.isBundle) { t.inBundles += (+p.qty||1); return; }
+    var q = p.isBundle ? 1 : (+p.qty||1);
+    if (p.isBundle) t.bundles++;
+    if (p.cat === 'Uncategorized') t.unassigned += q;
+    else if (p.cat === 'Small add-on') t.addons += q;
+    else if (p.cat === 'SWAG Bag') t.swag += q;
+    else t.prizes += q;
+  });
+  return t;
+}
+
 // ── Getters ────────────────────────────────────────────────────────────────
 function getPrizes()  { return Object.values(_prizes); }
 function getPrize(id) { return _prizes[id] || null; }
@@ -210,8 +228,9 @@ async function takeSnapshot(label) {
       prizes['p_'+p.id] = {...p, photos:(p.photos||[]).map(function(x){ return {thumb:x.thumb}; })};
     });
     const count = Object.keys(prizes).length;
-    await dbSet('snapshots/'+key, {ts:ts, count:count, label:label||'automatic', prizes:prizes, meta:_meta});
-    await dbSet('snapshotIndex/'+key, {ts:ts, count:count, label:label||'automatic'});
+    const units = prizeTally(Object.values(_prizes)).prizes;
+    await dbSet('snapshots/'+key, {ts:ts, count:count, units:units, label:label||'automatic', prizes:prizes, meta:_meta});
+    await dbSet('snapshotIndex/'+key, {ts:ts, count:count, units:units, label:label||'automatic'});
     // keep only the newest SNAP_KEEP
     const idx = await dbGet('snapshotIndex') || {};
     const keys = Object.keys(idx).sort(function(x,y){ return (idx[y].ts||0)-(idx[x].ts||0); });
@@ -226,7 +245,7 @@ async function takeSnapshot(label) {
 
 async function listSnapshots() {
   const idx = await dbGet('snapshotIndex') || {};
-  return Object.keys(idx).map(function(k){ return {key:k, ts:idx[k].ts, count:idx[k].count, label:idx[k].label}; })
+  return Object.keys(idx).map(function(k){ return {key:k, ts:idx[k].ts, count:idx[k].count, units:idx[k].units, label:idx[k].label}; })
     .sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
 }
 
@@ -236,23 +255,31 @@ async function doBackup() {
   renderPMSettings();
 }
 
-// Safest restore: only brings back prizes that are in the backup but not in the app now.
-async function restoreMissingFromSnapshot(key) {
+// Prizes that are in a backup but not in the app now (deleted or lost since then).
+async function snapshotMissing(key) {
+  const snap = await dbGet('snapshots/'+key);
+  if (!snap || !snap.prizes) return null;
+  const all = Object.values(snap.prizes).filter(function(p){ return p && p.id!==undefined; });
+  const missing = all.filter(function(p){ return !_prizes[p.id]; });
+  const added = getPrizes().filter(function(p){ return !all.some(function(q){ return q.id===p.id; }); }).length;
+  return {snap:snap, missing:missing, added:added};
+}
+
+// Brings back only the chosen prizes (ids) from a backup; nothing else changes.
+async function restoreSelectedFromSnapshot(key, ids) {
   try {
     const snap = await dbGet('snapshots/'+key);
     if (!snap || !snap.prizes) { showToast('Backup not found','error'); return; }
-    const missing = Object.values(snap.prizes).filter(function(p){ return p && p.id!==undefined && !_prizes[p.id]; });
-    if (!missing.length) { showToast('Nothing missing — everything in that backup is already here'); return; }
-    const names = missing.slice(0,12).map(function(p){ return '• '+(p.name||'(no name)')+(p.donor?' — '+p.donor:''); }).join('\n');
-    if (!confirm('Bring back '+missing.length+' prize'+(missing.length===1?'':'s')+' from the '+fmtWhen(snap.ts)+' backup?\n\n'+names+(missing.length>12?'\n…and '+(missing.length-12)+' more':'')+'\n\nNothing else will change.')) return;
+    const pick = Object.values(snap.prizes).filter(function(p){ return p && ids.indexOf(String(p.id))!==-1 && !_prizes[p.id]; });
+    if (!pick.length) { showToast('Nothing to restore'); return; }
     let maxId = 0;
-    for (const p of missing) {
+    for (const p of pick) {
       await dbSet('prizes/p_'+p.id, p);
       _prizes[p.id] = {...p, photos:p.photos||[]};
       maxId = Math.max(maxId, +p.id||0);
     }
     if ((_meta.nextId||1) <= maxId) { _meta.nextId = maxId+1; try { await dbSet('meta/nextId', _meta.nextId); } catch(e) {} }
-    showToast('Brought back '+missing.length+' prize'+(missing.length===1?'':'s')+' ✓');
+    showToast('Brought back '+pick.length+' prize'+(pick.length===1?'':'s')+' ✓');
     if (typeof renderGoals==='function') renderGoals();
     if (typeof renderPrizes==='function') renderPrizes();
     renderPMSettings();
@@ -312,24 +339,53 @@ async function listTrash() {
   return out.sort(function(a,b){ return (b.deletedAt||0)-(a.deletedAt||0); });
 }
 
-async function restoreFromTrash(key) {
+// Restores one trash entry. qty (optional) = restore only that many units of it.
+async function restoreFromTrash(key, qty, silent) {
   try {
     const t = await dbGet('trash/'+key);
-    if (!t || !t.prize) { showToast('Not found','error'); return; }
+    if (!t || !t.prize) { if(!silent) showToast('Not found','error'); return false; }
     const p = {...t.prize};
+    const have = Math.max(1, parseInt(p.qty,10) || 1);
+    const take = (qty && qty < have) ? qty : have;
     if (_prizes[p.id]) { p.id = _meta.nextId || 1; }   // partial deletes reuse an existing id: give it a fresh one
+    p.qty = take;
     if (p.bundledInto && !getPrizes().some(function(q){ return q.isBundle && q.name===p.bundledInto; })) p.bundledInto = null;
     await dbSet('prizes/p_'+p.id, p);
     const fulls = t.photos || [];
     if (fulls.length) await dbSet('photos/p_'+p.id, fulls);
     _prizes[p.id] = {...p, photos:(p.photos||[]).map(function(x,i){ return {thumb:x.thumb, full:fulls[i]||x.thumb}; })};
     if ((_meta.nextId||1) <= +p.id) { _meta.nextId = (+p.id)+1; try { await dbSet('meta/nextId', _meta.nextId); } catch(e) {} }
-    await dbDelete('trash/'+key);
-    showToast('Restored “'+(p.name||'prize')+'” ✓');
-    if (typeof renderGoals==='function') renderGoals();
-    if (typeof renderPrizes==='function') renderPrizes();
-    renderPMSettings();
-  } catch(e) { showToast('Restore failed: '+e.message,'error'); }
+    if (take < have) {
+      // some units stay in Recently deleted
+      await dbSet('trash/'+key+'/prize/qty', have - take);
+    } else {
+      await dbDelete('trash/'+key);
+    }
+    if (!silent) {
+      showToast('Restored “'+(p.name||'prize')+'”'+(take>1?' × '+take:'')+' ✓');
+      if (typeof renderGoals==='function') renderGoals();
+      if (typeof renderPrizes==='function') renderPrizes();
+      renderPMSettings();
+    }
+    return true;
+  } catch(e) { if(!silent) showToast('Restore failed: '+e.message,'error'); return false; }
+}
+
+// Restores k units out of a group of identical trash entries (same name + donor).
+async function restoreTrashGroup(keys, k) {
+  let left = k, done = 0;
+  for (const key of keys) {
+    if (left <= 0) break;
+    const t = await dbGet('trash/'+key);
+    if (!t || !t.prize) continue;
+    const q = Math.max(1, parseInt(t.prize.qty,10) || 1);
+    const take = Math.min(q, left);
+    if (await restoreFromTrash(key, take, true)) { left -= take; done += take; }
+  }
+  if (typeof renderGoals==='function') renderGoals();
+  if (typeof renderPrizes==='function') renderPrizes();
+  showToast(done ? 'Restored '+done+' ✓' : 'Nothing restored', done?'success':'error');
+  renderPMSettings();
 }
 
 async function purgeTrashItem(key) {

@@ -241,7 +241,7 @@ function renderGoals() {
       ? '<button onclick="event.stopPropagation();openGoalPrizeList(\''+cat+'\')" style="background:none;border:none;cursor:pointer;color:var(--text3);padding:0;margin-left:3px;flex-shrink:0" title="Edit list"><i class="ti ti-pencil" style="font-size:11px"></i></button>'
       : '';
     return '<div class="goal-card" style="border-color:var(--'+cls+')">'+
-      '<div style="font-size:11px;color:var(--text2);text-align:center">'+(cat==='BINGO'?'Prizes':cat)+'</div>'+
+      '<div style="font-size:11px;color:var(--text2);text-align:center">'+cat+'</div>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:3px">'+
         '<span style="font-size:12px;color:var(--text2);white-space:nowrap">'+have+'/ '+goalDisplay+'</span>'+
         '<span style="display:flex;align-items:center">'+
@@ -295,13 +295,13 @@ async function renderBudgetBar(prizes, el) {
     var raffleLine = arr.find(function(e){ return e && e.id==='raffle'; });
     var prizeBudget  = +(prizeLine?.fixedAmt||0);
     var raffleBudget = +(raffleLine?.fixedAmt||0);
-    // "Prizes" total = BINGO + Medium + Small + Uncategorized only.
+    // "Prizes" total = BINGO + Medium + Small + Small add-on + Unassigned; Raffle and SWAG excluded.
     // Raffle and SWAG Bag are tracked separately and excluded here.
-    var PRIZE_BUDGET_CATS = ['BINGO','Medium','Small','Uncategorized'];
+    var PRIZE_BUDGET_CATS = ['BINGO','Medium','Small','Small add-on','Uncategorized'];
     var prizeSpent  = prizes.filter(function(p){ return PRIZE_BUDGET_CATS.indexOf(p.cat)!==-1; }).reduce(function(s,p){ return s+(+p.paid||0); }, 0);
     var raffleSpent = prizes.filter(function(p){ return p.cat==='Raffle'; }).reduce(function(s,p){ return s+(+p.paid||0); }, 0);
     var html = '';
-    if (prizeBudget  > 0) html += budgetRow('Prizes',  prizeBudget,  prizeSpent);
+    if (prizeBudget  > 0) html += budgetRow('Bingo and small prizes',  prizeBudget,  prizeSpent);
     if (raffleBudget > 0) html += budgetRow('Raffle',  raffleBudget, raffleSpent);
     el.innerHTML = html;
   } catch(e) { el.innerHTML=''; }

@@ -172,7 +172,14 @@ function updatePrizeListAndCounts() {
   };
 
   var countsEl = document.getElementById('prize-counts');
-  if (countsEl) countsEl.textContent = individual.length+' prizes · '+bundled.length+' bundled · '+bundles.length+' bundles';
+  if (countsEl) {
+    var tl = prizeTally(allPrizes), parts = [tl.prizes+' prize'+(tl.prizes===1?'':'s')];
+    if (tl.unassigned) parts.push(tl.unassigned+' unassigned');
+    if (tl.addons) parts.push(tl.addons+' add-on'+(tl.addons===1?'':'s'));
+    if (tl.swag) parts.push(tl.swag+' SWAG');
+    if (tl.bundles) parts.push(tl.bundles+' bundle'+(tl.bundles===1?'':'s')+' ('+tl.inBundles+' items inside)');
+    countsEl.textContent = parts.join(' · ');
+  }
 
   buildPrizeList(allPrizes, bundles, individual, bundled, searchFilter, catFilter, searchTier);
 }
@@ -210,8 +217,21 @@ function jsAttrEscape(s){
   return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');
 }
 
+function clothingSizeSummary(grp){
+  if (!grp.every(function(p){ return p.itemType==='Clothing' && p.clothingDescription; })) return '';
+  var by={}, order=[];
+  grp.forEach(function(p){
+    var s = p.clothingSize==='Custom' ? (p.clothingSizeCustom||'Custom') : (p.clothingSize||'');
+    if(!s) return; if(!(s in by)){ by[s]=0; order.push(s); } by[s]+= (+p.qty||1);
+  });
+  var rank=CLOTHING_SIZES; order.sort(function(a,b){ var i=rank.indexOf(a), j=rank.indexOf(b); return (i<0?99:i)-(j<0?99:j); });
+  return order.length ? order.map(function(s){ return s+' \u00d7'+by[s]; }).join(' \u00b7 ') : '';
+}
 function stackCard(grp) {
   var name = grp[0].name||'';
+  var sizeSum = clothingSizeSummary(grp);
+  var titleText = name;
+  if (sizeSum) { var g0=grp[0]; titleText = (g0.clothingType==='Other'?(g0.clothingTypeCustom||'Other'):g0.clothingType)+': '+g0.clothingDescription; }
   var isExpanded = _expandedStacks.has(name);
   var totalQty = grp.reduce(function(s,p){ return s+(+p.qty||1); }, 0);
   var cat = grp[0].cat;
@@ -237,8 +257,8 @@ function stackCard(grp) {
               (sameCat?'<span class="cat-pill cat-'+(cat||'').toLowerCase().replace(/ /g,'-')+'">'+escHtml(cat||'')+'</span>':'<span style="font-size:10px;color:var(--text3)">Mixed categories</span>')+
               '<span style="font-size:10px;background:var(--purple-bg);color:var(--purple-text);padding:1px 6px;border-radius:8px"><i class="ti ti-stack-2" style="font-size:9px"></i> Stack of '+totalQty+'</span>'+
             '</div>'+
-            '<div style="font-size:14px;font-weight:600">'+escHtml(name||'Unnamed prize')+'</div>'+
-            '<div style="font-size:11px;color:var(--text2);margin-top:2px">Total qty '+totalQty+' \u00b7 Tap to '+(isExpanded?'collapse':'expand')+'</div>'+
+            '<div style="font-size:14px;font-weight:600">'+escHtml(titleText||'Unnamed prize')+'</div>'+
+            '<div style="font-size:11px;color:var(--text2);margin-top:2px">'+(sizeSum?'Sizes: '+escHtml(sizeSum)+' \u00b7 ':'')+'Total qty '+totalQty+' \u00b7 Tap to '+(isExpanded?'collapse':'expand')+'</div>'+
           '</div>'+
           '<div style="flex-shrink:0;display:flex;align-items:center;gap:4px">'+
             '<button type="button" title="Edit" aria-label="Edit" onclick="event.stopPropagation();openEditPrize('+grp[0].id+')" style="border:none;background:transparent;padding:6px;cursor:pointer;color:var(--text2);line-height:1"><i class="ti ti-pencil" style="font-size:17px"></i></button>'+
@@ -312,6 +332,9 @@ function buildPrizeList(allPrizes, bundles, individual, bundled, searchFilter, c
   var groups = {}; var groupOrder = [];
   iFiltered.forEach(function(p){
     var key = (p.name||'')+'\u0001'+(p.donor||'');
+    if (p.itemType==='Clothing' && p.clothingDescription) {
+      key = 'C\u0001'+(p.clothingType==='Other'?(p.clothingTypeCustom||''):(p.clothingType||''))+'\u0001'+p.clothingDescription+'\u0001'+(p.donor||'');
+    }
     if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
     groups[key].push(p);
   });
@@ -1004,11 +1027,13 @@ function pmSomeApply(N){
   pmSubDone(n);
 }
 // Resolves to {category: qty, ...} or null (cancelled). Save is disabled until the total matches.
-function askCategoryAlloc(N, start, title){
+var CLOTHING_SIZES = ['XS','S','M','L','XL','XXL','XXXL','One size'];
+function askCategoryAlloc(N, start, title, items, labelFn){
+  items = items || CATEGORIES; labelFn = labelFn || catLabelOf;
   return new Promise(function(resolve){
     _pmSubResolve = resolve;
-    var rows = CATEGORIES.map(function(c,i){
-      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><span>'+escHtml(catLabelOf(c))+'</span>'+
+    var rows = items.map(function(c,i){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><span>'+escHtml(labelFn(c))+'</span>'+
         '<input type="number" class="pm-alloc" data-cat="'+escHtml(c)+'" min="0" inputmode="numeric" style="width:90px" value="'+((start&&start[c])||'')+'" oninput="pmAllocUpdate('+N+')"></div>';
     }).join('');
     pmSubOpen('<h3>'+escHtml(title||('Split '+N+' across categories'))+'</h3>'+rows+
@@ -1281,7 +1306,7 @@ function _selectItemTypeInner(t, preFill) {
     nameSection =
       '<div class="field"><label>Author</label><input type="text" id="pm-author" value="'+escHtml(authorVal)+'" placeholder="Author name"></div>'+
       '<div class="field"><label>Title of book/series</label><input type="text" id="pm-book-title" value="'+escHtml(titleVal)+'" placeholder="Book or series title"></div>'+
-      '<div class="field"><label>This donation is</label><select id="pm-book-series"><option value="">One book</option><option value="1"'+((pf&&pf.isSeries)?' selected':'')+'>A whole series</option></select></div>';
+      '<div class="field"><label>This prize is</label><select id="pm-book-series"><option value="">One book</option><option value="1"'+((pf&&pf.isSeries)?' selected':'')+'>A whole series</option></select></div>';
 
   } else if (isClothing) {
     var ctype=(pf&&pf.clothingType)||'';
@@ -1464,6 +1489,12 @@ function _selectItemTypeInner(t, preFill) {
   }
 }
 
+function pmNameTaken(name, original){
+  var n=String(name||'').trim().toLowerCase(); if(!n) return false;
+  if(original && n===String(original).trim().toLowerCase()) return false;
+  return getPrizes().some(function(q){ return String(q.name||'').trim().toLowerCase()===n; });
+}
+function pmDupMsg(){ showToast('You already have a prize with that description. Please change the name.','error'); }
 function advanceBookAuthor(){
   var v = document.getElementById('pm-author')?.value?.trim()||'';
   if(!v) return; // stay put until they actually enter something
@@ -1473,6 +1504,7 @@ function advanceBookTitle(){
   var authorVal = document.getElementById('pm-author-hidden')?.value||'';
   var v = document.getElementById('pm-book-title')?.value?.trim()||'';
   if(!v) return;
+  if(pmNameTaken(authorVal+': '+v)){ pmDupMsg(); document.getElementById('pm-book-title')?.focus(); return; }
   selectItemType('Book', {author:authorVal, bookTitle:v});
 }
 
@@ -1508,6 +1540,8 @@ function advanceClothingDesc(){
   var csizeCustom = document.getElementById('pm-clothing-size-custom-hidden')?.value||'';
   var v = document.getElementById('pm-clothing-desc')?.value?.trim()||'';
   if (!v) return;
+  var tRes = ctype==='Other' ? (ctypeCustom||'Other') : ctype, sRes = csize==='Custom' ? (csizeCustom||'') : csize;
+  if(pmNameTaken(tRes+': '+v+(sRes?', '+sRes:''))){ pmDupMsg(); document.getElementById('pm-clothing-desc')?.focus(); return; }
   selectItemType('Clothing', {clothingType:ctype, clothingTypeCustom:ctypeCustom, clothingSize:csize, clothingSizeCustom:csizeCustom, clothingDescription:v});
 }
 
@@ -1520,6 +1554,7 @@ function advanceBookishDesc(){
   var btype = document.getElementById('pm-bookish-type-hidden')?.value||'';
   var v = document.getElementById('pm-bookish-desc')?.value?.trim()||'';
   if (!v) return;
+  if(pmNameTaken(btype+': '+v)){ pmDupMsg(); document.getElementById('pm-bookish-desc')?.focus(); return; }
   selectItemType('Bookish item', {bookishType:btype, bookishDescription:v});
 }
 
@@ -1528,6 +1563,7 @@ function advancePrizeDescription(){
   var v = document.getElementById('pm-name')?.value?.trim()||'';
   if (!v) return;
   var t = document.getElementById('pm-item-type')?.value||'';
+  if(pmNameTaken(v)){ pmDupMsg(); document.getElementById('pm-name')?.focus(); return; }
   selectItemType(t, {name:v});
 }
 
@@ -1795,9 +1831,19 @@ async function doAddPrize(){
   var cat=document.getElementById('pm-cat')?.value;
   if(!cat){showToast('Please select a category','error');return;}
   var qty=parseInt(document.getElementById('pm-qty')?.value)||1;
+  if(pmNameTaken(gen.name)){ pmDupMsg(); return; }
   var alloc=null;
   try{ alloc=JSON.parse(document.getElementById('pm-cat-alloc')?.value||'null'); }catch(e){}
   if(alloc && qty===1) alloc=null;
+  // Clothing in more than one piece: ask how many of each size (each size is its own entry, shown together as one stack)
+  var sizeAlloc=null;
+  if(itemType==='Clothing' && qty>1 && !alloc && gen.extra.clothingSize && gen.extra.clothingSize!=='One size' && gen.extra.clothingSize!=='Custom'){
+    var st={}; st[gen.extra.clothingSize]=qty;
+    sizeAlloc=await askCategoryAlloc(qty,st,'How many of each size? ('+qty+' total)',CLOTHING_SIZES,function(c){return c;});
+    if(!sizeAlloc) return;
+    var _t=gen.extra.clothingType==='Other'?(gen.extra.clothingTypeCustom||'Other'):gen.extra.clothingType;
+    for(var sz in sizeAlloc){ if(pmNameTaken(_t+': '+gen.extra.clothingDescription+', '+sz)){ pmDupMsg(); return; } }
+  }
   if(alloc){
     var sum=0; for(var ck in alloc) sum+=alloc[ck];
     if(sum!==qty){
@@ -1815,7 +1861,12 @@ async function doAddPrize(){
     loc:document.getElementById('pm-loc')?.value?.trim()||'',
     notes:document.getElementById('pm-notes')?.value?.trim()||'',
     photos:[..._pendingPhotos],...gen.extra,...donor};
-  if(alloc){
+  if(sizeAlloc){
+    var ct=gen.extra.clothingType==='Other'?(gen.extra.clothingTypeCustom||'Other'):gen.extra.clothingType;
+    for(var sz2 in sizeAlloc){
+      await addPrize({...base,name:ct+': '+gen.extra.clothingDescription+', '+sz2,clothingSize:sz2,clothingSizeCustom:'',cat:cat,qty:sizeAlloc[sz2]});
+    }
+  } else if(alloc){
     for(var c in alloc){ await addPrize({...base,cat:c,qty:alloc[c]}); }
   } else {
     await addPrize({...base,cat:cat,qty:qty});
@@ -1829,6 +1880,8 @@ async function doEditPrize(id){
   if(!itemType){showToast('Please select an item type','error');return;}
   var gen=computePrizeNameAndTypeFields();
   if(!gen.ok){showToast(prizeValidationMessage(itemType),'error');return;}
+  var _origE=getPrize(id);
+  if(pmNameTaken(gen.name,_origE&&_origE.name)){ pmDupMsg(); return; }
   var donor=getDonorFields();
   var tagFields={
     tagMade:document.getElementById('pm-tagMade')?.checked||false,
