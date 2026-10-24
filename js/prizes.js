@@ -111,8 +111,9 @@ function renderPrizes() {
       '<div id="prize-counts" style="font-size:13px;color:var(--text2)"></div>'+
       '<button class="btn primary" onclick="openAddPrize()"><i class="ti ti-plus"></i> Add prize</button>'+
     '</div>'+
-    '<div style="margin-bottom:8px">'+
-      '<input type="text" id="prize-search" value="'+escHtml(_searchQ)+'" placeholder="Search prizes, donors, notes\u2026" style="width:100%;font-size:16px;padding:8px 12px" oninput="debouncePrizeSearch(this.value)">'+
+    '<div style="margin-bottom:8px;position:relative">'+
+      '<input type="text" id="prize-search" value="'+escHtml(_searchQ)+'" placeholder="Search prizes, donors, notes\u2026" style="width:100%;font-size:16px;padding:8px 40px 8px 12px;box-sizing:border-box" oninput="debouncePrizeSearch(this.value)">'+
+      '<button type="button" id="prize-search-x" aria-label="Clear search" onclick="clearPrizeSearch()" style="display:'+(_searchQ?'flex':'none')+';position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:none;border-radius:50%;background:var(--border);color:var(--text2);align-items:center;justify-content:center;cursor:pointer;padding:0"><i class="ti ti-x"></i></button>'+
     '</div>'+
     '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
       '<span style="font-size:11px;color:var(--text3)">Sort by:</span>'+
@@ -370,8 +371,13 @@ function buildPrizeList(allPrizes, bundles, individual, bundled, searchFilter, c
   el.innerHTML = html;
 }
 
+function clearPrizeSearch() {
+  var i=document.getElementById('prize-search'); if(i){ i.value=''; i.focus(); }
+  debouncePrizeSearch('');
+}
 function debouncePrizeSearch(val) {
   _searchQ = val;
+  var x=document.getElementById('prize-search-x'); if(x) x.style.display = val ? 'flex' : 'none';
   clearTimeout(_prizeDebounce);
   _prizeDebounce = setTimeout(updatePrizeListAndCounts, 150);
 }
@@ -966,7 +972,7 @@ function pmNext(){
   // Tapping Next blurs the text box first, which already advances the step.
   if (Date.now() - _pmLastAdvance < 700) return;
   if (!document.getElementById('pm-item-type')?.value) { showToast('Pick an item type first','error'); return; }
-  var tries = [['pm-author',advanceBookAuthor],['pm-book-title',advanceBookTitle],
+  var tries = [['pm-cq-qty',advanceClothingQty],['pm-author',advanceBookAuthor],['pm-book-title',advanceBookTitle],
     ['pm-clothing-type-custom',advanceClothingTypeCustom],['pm-clothing-size-custom',advanceClothingSizeCustom],
     ['pm-clothing-desc',advanceClothingDesc],['pm-bookish-desc',advanceBookishDesc],['pm-name',advancePrizeDescription]];
   for (var i=0;i<tries.length;i++){
@@ -1028,6 +1034,7 @@ function pmSomeApply(N){
 }
 // Resolves to {category: qty, ...} or null (cancelled). Save is disabled until the total matches.
 var CLOTHING_SIZES = ['XS','S','M','L','XL','XXL','XXXL','One size'];
+var _pmCQ = null; // clothing add flow: {qty, alloc:{size:count}|null}, asked right after choosing Clothing
 function askCategoryAlloc(N, start, title, items, labelFn){
   items = items || CATEGORIES; labelFn = labelFn || catLabelOf;
   return new Promise(function(resolve){
@@ -1178,6 +1185,7 @@ async function openEditPrize(id) {
 }
 
 async function showPrizeModal(p, authors, itemTypes) {
+  _pmCQ = null;
   var isEdit = !!p;
   var prizeId = p ? p.id : 0;
   var currentItemType = (p&&p.itemType)||'';
@@ -1239,6 +1247,7 @@ function captureCurrentDetails(){
 }
 
 function selectItemType(t, preFill) {
+  if (!preFill) _pmCQ = null;
   _pmLastAdvance = Date.now();
   _selectItemTypeInner(t, preFill);
   refreshPrimary();
@@ -1306,7 +1315,7 @@ function _selectItemTypeInner(t, preFill) {
     nameSection =
       '<div class="field"><label>Author</label><input type="text" id="pm-author" value="'+escHtml(authorVal)+'" placeholder="Author name"></div>'+
       '<div class="field"><label>Title of book/series</label><input type="text" id="pm-book-title" value="'+escHtml(titleVal)+'" placeholder="Book or series title"></div>'+
-      '<div class="field"><label>This prize is</label><select id="pm-book-series"><option value="">One book</option><option value="1"'+((pf&&pf.isSeries)?' selected':'')+'>A whole series</option></select></div>';
+      '<div class="field"><label>This prize is</label><div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="cat-btn'+((pf&&pf.isSeries)?'':' active')+'" id="pm-bs-one" onclick="pmPickSeries(\'\')">One book</button><button type="button" class="cat-btn'+((pf&&pf.isSeries)?' active':'')+'" id="pm-bs-ser" onclick="pmPickSeries(\'1\')">A whole series</button></div><input type="hidden" id="pm-book-series" value="'+((pf&&pf.isSeries)?'1':'')+'"></div>';
 
   } else if (isClothing) {
     var ctype=(pf&&pf.clothingType)||'';
@@ -1316,8 +1325,14 @@ function _selectItemTypeInner(t, preFill) {
     var descVal = (pf&&pf.clothingDescription) || ((pf&&pf.id&&!pf.clothingType) ? (pf.name||'') : '');
     var ctypeResolved = ctype==='Other' ? ctypeCustom : ctype;
     var ctypeReady = ctype && (ctype!=='Other' || ctypeCustom);
-    var csizeReady = csize && (csize!=='Custom' || csizeCustom);
+    var csizeReady = (csize && (csize!=='Custom' || csizeCustom)) || !!(_pmCQ && _pmCQ.alloc);
 
+    // Stage 0 (add only): how many? (then, if more than one, how many of each size)
+    if (!isEdit && !_pmCQ) {
+      el.innerHTML = '<div class="field"><label>How many of these?</label><input type="text" inputmode="numeric" pattern="[0-9]*" id="pm-cq-qty" placeholder="1" enterkeyhint="next" onblur="advanceClothingQty()" onkeydown="pmStageKey(event,this)"></div>';
+      document.getElementById('pm-cq-qty')?.focus();
+      return;
+    }
     // Stage 1: Type of clothing only
     if (!isEdit && !ctypeReady) {
       el.innerHTML =
@@ -1352,7 +1367,7 @@ function _selectItemTypeInner(t, preFill) {
     if (!isEdit && !descVal) {
       var csizeResolved = csize==='Custom' ? csizeCustom : csize;
       el.innerHTML =
-        '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Type: <b>'+escHtml(ctypeResolved)+'</b> \u00b7 Size: <b>'+escHtml(csizeResolved)+'</b></div>'+
+        '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Type: <b>'+escHtml(ctypeResolved)+'</b> \u00b7 '+(_pmCQ&&_pmCQ.alloc?'Sizes: <b>'+escHtml(pmSizeText(_pmCQ.alloc))+'</b>':'Size: <b>'+escHtml(csizeResolved)+'</b>')+'</div>'+
         '<div class="field"><label>Description</label><input type="text" id="pm-clothing-desc" placeholder="e.g. navy with gold logo" onblur="advanceClothingDesc()" onkeydown="pmStageKey(event,this)"></div>'+
         '<input type="hidden" id="pm-clothing-type-hidden" value="'+escHtml(ctype)+'">'+
         '<input type="hidden" id="pm-clothing-type-custom-hidden" value="'+escHtml(ctypeCustom)+'">'+
@@ -1370,14 +1385,16 @@ function _selectItemTypeInner(t, preFill) {
       '</div><input type="hidden" id="pm-clothing-type" value="'+escHtml(ctype)+'">'+
       '<div id="clothing-type-other-field" style="display:'+(ctype==='Other'?'block':'none')+';margin-top:6px"><input type="text" id="pm-clothing-type-custom" value="'+escHtml(ctypeCustom)+'" placeholder="Describe the clothing type"></div>'+
       '</div>'+
-      '<div class="field"><label>Size</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      ((!isEdit && _pmCQ && _pmCQ.alloc)
+        ? '<div class="field"><label>Sizes</label><div style="font-size:14px;padding:6px 0">'+escHtml(pmSizeText(_pmCQ.alloc))+'</div><input type="hidden" id="pm-clothing-size" value="'+escHtml(Object.keys(_pmCQ.alloc)[0]||'')+'"></div>'
+        : (      '<div class="field"><label>Size</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+
         ['XS','S','M','L','XL','XXL','XXXL','One size','Other'].map(function(sz){
           var val=sz==='Other'?'Custom':sz;
           return '<button type="button" class="cat-btn'+(csize===val?' active':'')+'" onclick="selectClothingSize(\''+val+'\')" id="csize-'+val.replace(/[^a-zA-Z]/g,'')+'">'+sz+'</button>';
         }).join('')+
       '</div><input type="hidden" id="pm-clothing-size" value="'+escHtml(csize)+'">'+
       '<div id="clothing-size-other-field" style="display:'+(csize==='Custom'?'block':'none')+';margin-top:6px"><input type="text" id="pm-clothing-size-custom" value="'+escHtml(csizeCustom)+'" placeholder="Enter size"></div>'+
-      '</div>'+
+      '</div>'+'')) +
       '<div class="field"><label>Description</label><input type="text" id="pm-clothing-desc" value="'+escHtml(descVal)+'" placeholder="e.g. navy with gold logo"></div>';
 
   } else if (isBookish) {
@@ -1443,7 +1460,7 @@ function _selectItemTypeInner(t, preFill) {
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">'+
       '<div class="field"><label>Value ($)</label><input type="text" inputmode="decimal" id="pm-value" value="'+((pf&&pf.value)||'')+'" placeholder="0.00" enterkeyhint="next" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'pm-paid\')?.focus()}"></div>'+
       '<div class="field"><label>Amount paid ($)</label><input type="text" inputmode="decimal" id="pm-paid" value="'+((pf&&pf.paid)||'')+'" placeholder="0.00" enterkeyhint="next" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'pm-qty\')?.focus()}"></div>'+
-      '<div class="field"><label>Qty</label><input type="text" inputmode="numeric" pattern="[0-9]*" id="pm-qty" data-prev="'+((pf&&parseInt(pf.qty))||1)+'" oninput="pmUpdateSplitBtn()" onchange="onQtyChange()" value="'+((pf&&pf.qty)||'')+'" placeholder="1" enterkeyhint="done" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"></div>'+
+      '<div class="field"><label>Qty</label><input type="text" inputmode="numeric" pattern="[0-9]*" id="pm-qty" data-prev="'+((pf&&parseInt(pf.qty))||(!isEdit&&_pmCQ?_pmCQ.qty:1)||1)+'" oninput="pmUpdateSplitBtn()" onchange="onQtyChange()" value="'+((pf&&pf.qty)||(!isEdit&&_pmCQ&&_pmCQ.qty>1?_pmCQ.qty:''))+'"'+((!isEdit&&_pmCQ&&_pmCQ.alloc)?' readonly style="background:var(--bg2,#f3f3f3)"':'')+' placeholder="1" enterkeyhint="done" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"></div>'+
     '</div>'+
     '<div class="field"><label>Category</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+catPills+'</div>'+
       '<input type="hidden" id="pm-cat" value="'+escHtml(defaultCat)+'">'+
@@ -1523,6 +1540,22 @@ function advanceBookTitle(){
 // Clothing staging: tapping a type pill advances immediately; "Other"
 // reveals an inline text field instead (still on the same step) whose
 // blur/Enter is what actually advances.
+function pmSizeText(a){ return Object.keys(a||{}).map(function(s){ return s+' \u00d7'+a[s]; }).join(' \u00b7 '); }
+var _pmCQBusy=false;
+async function advanceClothingQty(){
+  if (_pmCQ || _pmCQBusy) return;
+  _pmCQBusy=true; try{ await _advanceClothingQty(); } finally { _pmCQBusy=false; }
+}
+async function _advanceClothingQty(){
+  var v=document.getElementById('pm-cq-qty'); if(!v) return;
+  var n=parseInt(v.value)||0;
+  if (n<1) { if(v.value.trim()) showToast('Enter a number, 1 or more','error'); return; }
+  if (n===1) { _pmCQ={qty:1,alloc:null}; selectItemType('Clothing',{clothingQty:1}); return; }
+  var a=await askCategoryAlloc(n,null,'How many of each size? ('+n+' total)',CLOTHING_SIZES,function(c){return c;});
+  if(!a){ v.focus(); return; }
+  _pmCQ={qty:n,alloc:a};
+  selectItemType('Clothing',{clothingQty:n});
+}
 function pickClothingType(t){
   if (t==='Other') { selectItemType('Clothing', {clothingType:'Other'}); return; }
   selectItemType('Clothing', {clothingType:t});
@@ -1531,6 +1564,11 @@ function advanceClothingTypeCustom(){
   var v = document.getElementById('pm-clothing-type-custom')?.value?.trim()||'';
   if (!v) return;
   selectItemType('Clothing', {clothingType:'Other', clothingTypeCustom:v});
+}
+function pmPickSeries(v){
+  var h=document.getElementById('pm-book-series'); if(h) h.value=v;
+  document.getElementById('pm-bs-one')?.classList.toggle('active',!v);
+  document.getElementById('pm-bs-ser')?.classList.toggle('active',!!v);
 }
 function pickClothingSize(v){
   var ctype = document.getElementById('pm-clothing-type-hidden')?.value||'';
@@ -1553,7 +1591,8 @@ function advanceClothingDesc(){
   var v = document.getElementById('pm-clothing-desc')?.value?.trim()||'';
   if (!v) return;
   var tRes = ctype==='Other' ? (ctypeCustom||'Other') : ctype, sRes = csize==='Custom' ? (csizeCustom||'') : csize;
-  if(pmNameTaken(tRes+': '+v+(sRes?', '+sRes:''))){ pmDupMsg(); document.getElementById('pm-clothing-desc')?.focus(); return; }
+  var _chk = (_pmCQ&&_pmCQ.alloc) ? Object.keys(_pmCQ.alloc).map(function(s){return tRes+': '+v+', '+s;}) : [tRes+': '+v+(sRes?', '+sRes:'')];
+  if(_chk.some(function(n){return pmNameTaken(n);})){ pmDupMsg(); document.getElementById('pm-clothing-desc')?.focus(); return; }
   selectItemType('Clothing', {clothingType:ctype, clothingTypeCustom:ctypeCustom, clothingSize:csize, clothingSizeCustom:csizeCustom, clothingDescription:v});
 }
 
@@ -1638,6 +1677,12 @@ function setDonorType(type, preFill) {
   el.dataset.donorType=type;
   // Tapped by the user (not the automatic call while the form draws): start typing the name.
   if (isAuthor && !preFill) { var pr0=document.getElementById('pm-pronoun'); if(pr0) pr0.value='her'; }
+  // A book donated by its own author: use the Author already entered above as the donor.
+  if (isAuthor && !preFill && document.getElementById('pm-item-type')?.value==='Book') {
+    var ba=(document.getElementById('pm-author')?.value||document.getElementById('pm-author-hidden')?.value||'').trim();
+    var dn0=document.getElementById('pm-donor');
+    if (ba && dn0 && !dn0.value.trim()) { dn0.value=ba; toggleOtherAuthor(ba); }
+  }
   if (arguments.length===1) {
     var dn=document.getElementById('pm-donor'); if(dn) dn.focus(); // right away, so phones open the keyboard
     setTimeout(function(){ var d2=document.getElementById('pm-donor'); if(d2 && document.activeElement!==d2) d2.focus(); },60);
@@ -1843,19 +1888,15 @@ async function doAddPrize(){
   var cat=document.getElementById('pm-cat')?.value;
   if(!cat){showToast('Please select a category','error');return;}
   var qty=parseInt(document.getElementById('pm-qty')?.value)||1;
-  if(pmNameTaken(gen.name)){ pmDupMsg(); return; }
+  var sizeAlloc=(itemType==='Clothing' && _pmCQ && _pmCQ.alloc) ? _pmCQ.alloc : null;
+  var _ct=gen.extra.clothingType==='Other'?(gen.extra.clothingTypeCustom||'Other'):gen.extra.clothingType;
+  if(sizeAlloc){
+    for(var sz in sizeAlloc){ if(pmNameTaken(_ct+': '+gen.extra.clothingDescription+', '+sz)){ pmDupMsg(); return; } }
+    qty=_pmCQ.qty;
+  } else if(pmNameTaken(gen.name)){ pmDupMsg(); return; }
   var alloc=null;
   try{ alloc=JSON.parse(document.getElementById('pm-cat-alloc')?.value||'null'); }catch(e){}
   if(alloc && qty===1) alloc=null;
-  // Clothing in more than one piece: ask how many of each size (each size is its own entry, shown together as one stack)
-  var sizeAlloc=null;
-  if(itemType==='Clothing' && qty>1 && !alloc && gen.extra.clothingSize && gen.extra.clothingSize!=='One size' && gen.extra.clothingSize!=='Custom'){
-    var st={}; st[gen.extra.clothingSize]=qty;
-    sizeAlloc=await askCategoryAlloc(qty,st,'How many of each size? ('+qty+' total)',CLOTHING_SIZES,function(c){return c;});
-    if(!sizeAlloc) return;
-    var _t=gen.extra.clothingType==='Other'?(gen.extra.clothingTypeCustom||'Other'):gen.extra.clothingType;
-    for(var sz in sizeAlloc){ if(pmNameTaken(_t+': '+gen.extra.clothingDescription+', '+sz)){ pmDupMsg(); return; } }
-  }
   if(alloc){
     var sum=0; for(var ck in alloc) sum+=alloc[ck];
     if(sum!==qty){
@@ -1874,9 +1915,17 @@ async function doAddPrize(){
     notes:document.getElementById('pm-notes')?.value?.trim()||'',
     photos:[..._pendingPhotos],...gen.extra,...donor};
   if(sizeAlloc){
-    var ct=gen.extra.clothingType==='Other'?(gen.extra.clothingTypeCustom||'Other'):gen.extra.clothingType;
+    // Each size is its own entry. If the category is split too, fill the categories in order across the sizes.
+    var cats=alloc?Object.keys(alloc).map(function(c){return [c,alloc[c]];}):[[cat,qty]];
+    var ci=0, left=cats[0][1];
     for(var sz2 in sizeAlloc){
-      await addPrize({...base,name:ct+': '+gen.extra.clothingDescription+', '+sz2,clothingSize:sz2,clothingSizeCustom:'',cat:cat,qty:sizeAlloc[sz2]});
+      var n=sizeAlloc[sz2];
+      while(n>0 && ci<cats.length){
+        var take=Math.min(n,left);
+        await addPrize({...base,name:_ct+': '+gen.extra.clothingDescription+', '+sz2,clothingSize:sz2,clothingSizeCustom:'',cat:cats[ci][0],qty:take});
+        n-=take; left-=take;
+        if(left===0){ ci++; if(ci<cats.length) left=cats[ci][1]; }
+      }
     }
   } else if(alloc){
     for(var c in alloc){ await addPrize({...base,cat:c,qty:alloc[c]}); }
