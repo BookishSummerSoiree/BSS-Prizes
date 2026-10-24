@@ -1494,7 +1494,19 @@ function pmNameTaken(name, original){
   if(original && n===String(original).trim().toLowerCase()) return false;
   return getPrizes().some(function(q){ return String(q.name||'').trim().toLowerCase()===n; });
 }
-function pmDupMsg(){ showToast('You already have a prize with that description. Please change the name.','error'); }
+function pmDupMsg(){
+  var msg='You already have a prize with this name. Please use another name.';
+  showToast(msg,'error');
+  var m=document.querySelector('.modal'); if(!m) return;
+  var b=document.getElementById('pm-dup-banner');
+  if(!b){ b=document.createElement('div'); b.id='pm-dup-banner';
+    b.style.cssText='background:#FDECEC;color:#B42318;border:1px solid #F4B4B4;border-radius:10px;padding:10px 12px;margin:0 0 12px;font-size:14px;font-weight:600';
+    var h=m.querySelector('.modal-close'); if(h&&h.nextSibling) m.insertBefore(b,h.nextSibling); else m.insertBefore(b,m.firstChild);
+    document.addEventListener('input',function clr(){ var x=document.getElementById('pm-dup-banner'); if(x) x.remove(); document.removeEventListener('input',clr); });
+  }
+  b.textContent=msg;
+  try{ m.scrollTop=0; b.scrollIntoView({block:'nearest'}); }catch(e){}
+}
 function advanceBookAuthor(){
   var v = document.getElementById('pm-author')?.value?.trim()||'';
   if(!v) return; // stay put until they actually enter something
