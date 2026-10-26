@@ -402,7 +402,7 @@ function prizeCard(p) {
   // so browsing/expanding a stack can't accidentally launch the edit modal.
   var clickFn = _bundleMode
     ? (isBundled || catMismatch ? '' : 'toggleBundleSelect('+p.id+')')
-    : '';
+    : 'openEditPrize('+p.id+')';   // tapping anywhere on the card opens Edit
 
   // In bundle mode: category-mismatched prizes can't be bundled with this
   // one — dim them to show they're unselectable. Prizes already in a
@@ -442,7 +442,7 @@ function prizeCard(p) {
     extraPhotos += '</div>';
   }
 
-  return '<div class="prize-card" style="'+opacity+border+bg+(_bundleMode?'':'cursor:default;')+'" onclick="'+clickFn+'">'+
+  return '<div class="prize-card" style="'+opacity+border+bg+(_bundleMode?'':'cursor:pointer;')+'" onclick="'+clickFn+'">'+
     '<div style="display:flex;gap:10px;align-items:flex-start">'+
       checkbox+
       thumbHtml+
