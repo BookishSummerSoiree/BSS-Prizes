@@ -411,20 +411,29 @@ function updateSyncStatus(status) {
 
 function startSync(onChange) {
   if (_pollInterval) clearInterval(_pollInterval);
+  let tick = 0, busy = false;
   _pollInterval = setInterval(async () => {
+    // Skip while the app is in a background tab or a previous check is still running.
+    if (document.hidden || busy) return;
+    busy = true;
     try {
-      const [prizes, authors] = await Promise.all([
-        dbGet('prizes'),
-        loadAuthorsFromHQ()
-      ]);
+      tick++;
+      const r = await dbGetIfChanged('prizes');
+      let changed = false;
       // Only overwrite local prizes if Firebase actually has data
       // This prevents a failed write from being overwritten by empty Firebase
-      if (prizes && Object.keys(prizes).length > 0) {
-        _prizes = normalizePrizes(prizes);
+      if (r.changed && r.data && Object.keys(r.data).length > 0) {
+        _prizes = normalizePrizes(r.data);
+        changed = true;
       }
-      if (authors && authors.length > 0) _authors = authors;
-      onChange();
+      // The author list almost never changes, so check it only every 5th time.
+      if (tick % 5 === 0) {
+        const authors = await loadAuthorsFromHQ();
+        if (authors && authors.length > 0) { _authors = authors; changed = true; }
+      }
+      if (changed) onChange();
     } catch(e) {}
+    busy = false;
   }, 20000);
 }
 function stopSync() {

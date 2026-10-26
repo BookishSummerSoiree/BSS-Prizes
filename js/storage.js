@@ -8,6 +8,32 @@ async function dbGet(path) {
     return res.ok ? res.json() : null;
   } catch(e) { return null; }
 }
+// Conditional read for polling: asks Firebase for an ETag and sends it back next time,
+// so when nothing changed the answer is a tiny "304 not modified" instead of the whole
+// prize list (with every photo thumbnail). Falls back to a normal read if the browser or
+// server doesn't cooperate.
+const _etags = {};
+let _etagBroken = false;
+async function dbGetIfChanged(path) {
+  if (!window.FIREBASE_DB_URL) return {changed:false, data:null};
+  if (!_etagBroken) {
+    try {
+      const headers = {'X-Firebase-ETag':'true'};
+      if (_etags[path]) headers['If-None-Match'] = _etags[path];
+      const res = await fetch(`${window.FIREBASE_DB_URL}/${path}.json`, {headers, cache:'no-store'});
+      if (res.status === 304) return {changed:false, data:null};
+      if (res.ok) {
+        const tag = res.headers.get('ETag');
+        if (tag) { _etags[path] = tag; return {changed:true, data:await res.json()}; }
+        _etagBroken = true;   // header not readable here: stop trying
+        return {changed:true, data:await res.json()};
+      }
+      return {changed:false, data:null};
+    } catch(e) { _etagBroken = true; }
+  }
+  const data = await dbGet(path);
+  return {changed:data !== null, data};
+}
 async function dbSet(path, data) {
   if (!window.FIREBASE_DB_URL) {
     throw new Error('No Firebase URL configured');

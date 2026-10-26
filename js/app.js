@@ -47,6 +47,17 @@ function doSignOut() {
   renderLogin();
 }
 
+function restoreScroll() {
+  let y = 0;
+  try { y = +sessionStorage.getItem('pm_scroll') || 0; } catch(e) {}
+  if (!y) return;
+  // content grows as data loads, so retry briefly until the page is tall enough
+  let tries = 0;
+  const go = () => { window.scrollTo(0,y); document.body.scrollTop=y; document.documentElement.scrollTop=y;
+    if (++tries < 12 && Math.abs((window.scrollY||document.body.scrollTop||document.documentElement.scrollTop)-y) > 4) setTimeout(go,150); };
+  requestAnimationFrame(go);
+}
+
 async function startApp() {
   renderShell();
   // Refresh returns you to the tab (and scroll spot) you were on.
@@ -55,17 +66,23 @@ async function startApp() {
   if (!['prizes','tags','settings'].includes(_savedTab)) _savedTab='prizes';
   showTab(_savedTab);
   setTimeout(() => updateSyncStatus('syncing'), 50);
-  await loadAll();
-  await loadGoalsFromFirebase();
-  await loadBINGOGoal();
+  // Show the last-known list instantly from this device's saved copy, then refresh from the server.
+  try {
+    const b = JSON.parse(localStorage.getItem(BACKUP_KEY) || 'null');
+    if (b && b.prizes && Object.keys(b.prizes).length && !Object.keys(_prizes).length) {
+      _prizes = b.prizes; if (b.meta) _meta = {..._meta, ...b.meta};
+      renderGoals(); renderPrizes();
+      restoreScroll();
+    }
+  } catch(e) {}
+  // Prizes, authors and goals load at the same time instead of one after another.
+  await Promise.all([
+    loadAll(),
+    (async () => { await loadGoalsFromFirebase(); await loadBINGOGoal(); })()
+  ]);
   renderGoals();
   renderPrizes();
-  if (_savedY) {
-    // content grows as data loads, so retry briefly until the page is tall enough
-    let tries=0; const go=()=>{ window.scrollTo(0,_savedY); document.body.scrollTop=_savedY; document.documentElement.scrollTop=_savedY;
-      if (++tries<12 && Math.abs((window.scrollY||document.body.scrollTop||document.documentElement.scrollTop)-_savedY)>4) setTimeout(go,150); };
-    requestAnimationFrame(go);
-  }
+  restoreScroll();
   // Lightweight refresh on each poll tick — avoids rebuilding the search
   // input / category pills out from under someone mid-keystroke.
   startSync(() => { refreshGoalsCache().then(renderGoals); updatePrizeListAndCounts(); });
