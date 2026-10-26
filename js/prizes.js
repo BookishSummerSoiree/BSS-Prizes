@@ -541,19 +541,29 @@ async function toggleBundleExpand(id) {
 async function viewPhoto(prizeId, idx) {
   var p = getPrize(prizeId);
   if (!p || !p.photos || !p.photos[idx]) return;
-  if (!p.photos[idx].full) await loadFullPhotos(prizeId);
-  var photo = getPrize(prizeId)?.photos?.[idx];
-  if (!photo) return;
-  var src = photo.full || photo.thumb || photo;
+  // Open right away with the small picture we already have, then swap in the
+  // full-size one as soon as it finishes downloading.
+  var cached = _fullPhotoCache[prizeId] && _fullPhotoCache[prizeId][idx];
+  var ph0 = p.photos[idx];
+  var src = cached || ph0.full || ph0.thumb || ph0;
+  var needFull = !cached && !ph0.full;
   var nav = '';
   if (p.photos.length > 1) {
     if (idx > 0) nav += '<button class="btn" onclick="closeModal();viewPhoto('+prizeId+','+(idx-1)+')">‹ Prev</button>';
     if (idx < p.photos.length-1) nav += '<button class="btn" onclick="closeModal();viewPhoto('+prizeId+','+(idx+1)+')">Next ›</button>';
   }
-  showModal('<div style="text-align:center"><img src="'+src+'" style="max-width:100%;max-height:70vh;border-radius:8px;object-fit:contain">'+
-    '<div style="margin-top:8px;font-size:12px;color:var(--text2)">'+escHtml(p.name||'')+' — Photo '+(idx+1)+' of '+p.photos.length+'</div>'+
+  var imgId = 'pv-img-'+prizeId+'-'+idx+'-'+Date.now();
+  showModal('<div style="text-align:center"><img id="'+imgId+'" src="'+src+'" style="max-width:100%;max-height:70vh;border-radius:8px;object-fit:contain'+(needFull?';filter:blur(1px)':'')+'">'+
+    '<div id="'+imgId+'-note" style="margin-top:8px;font-size:12px;color:var(--text2)">'+escHtml(p.name||'')+' — Photo '+(idx+1)+' of '+p.photos.length+(needFull?' · loading full size…':'')+'</div>'+
     (nav?'<div style="display:flex;justify-content:center;gap:6px;margin-top:8px">'+nav+'</div>':'')+
     '</div><div class="m-actions"><button class="btn" onclick="closeModal()">Close</button></div>');
+  if (needFull) {
+    await loadFullPhotos(prizeId);
+    var full = getPrize(prizeId)?.photos?.[idx]?.full;
+    var el = document.getElementById(imgId), note = document.getElementById(imgId+'-note');
+    if (el && full) { el.src = full; el.style.filter = ''; }
+    if (note) note.textContent = (p.name||'')+' — Photo '+(idx+1)+' of '+p.photos.length;
+  }
 }
 
 // ── Bundle building ───────────────────────────────────────────────────────────

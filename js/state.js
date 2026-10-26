@@ -40,9 +40,14 @@ async function loadAll() {
 }
 
 // Load full photos for a single prize (called when viewing)
+var _fullPhotoCache = {};   // prize id -> array of full-size photos (survives list refreshes)
 async function loadFullPhotos(id) {
   try {
-    const fulls = await dbGet('photos/p_'+id);
+    var fulls = _fullPhotoCache[id];
+    if (!fulls) {
+      fulls = await dbGet('photos/p_'+id);
+      if (fulls) _fullPhotoCache[id] = fulls;
+    }
     if (fulls && _prizes[id]) {
       _prizes[id].photos = fulls.map((full, i) => ({
         full,
