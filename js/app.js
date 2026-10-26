@@ -49,13 +49,23 @@ function doSignOut() {
 
 async function startApp() {
   renderShell();
-  showTab('prizes');
+  // Refresh returns you to the tab (and scroll spot) you were on.
+  let _savedTab='prizes', _savedY=0;
+  try { _savedTab=sessionStorage.getItem('pm_tab')||'prizes'; _savedY=+sessionStorage.getItem('pm_scroll')||0; } catch(e) {}
+  if (!['prizes','tags','settings'].includes(_savedTab)) _savedTab='prizes';
+  showTab(_savedTab);
   setTimeout(() => updateSyncStatus('syncing'), 50);
   await loadAll();
   await loadGoalsFromFirebase();
   await loadBINGOGoal();
   renderGoals();
   renderPrizes();
+  if (_savedY) {
+    // content grows as data loads, so retry briefly until the page is tall enough
+    let tries=0; const go=()=>{ window.scrollTo(0,_savedY); document.body.scrollTop=_savedY; document.documentElement.scrollTop=_savedY;
+      if (++tries<12 && Math.abs((window.scrollY||document.body.scrollTop||document.documentElement.scrollTop)-_savedY)>4) setTimeout(go,150); };
+    requestAnimationFrame(go);
+  }
   // Lightweight refresh on each poll tick — avoids rebuilding the search
   // input / category pills out from under someone mid-keystroke.
   startSync(() => { refreshGoalsCache().then(renderGoals); updatePrizeListAndCounts(); });
@@ -105,6 +115,7 @@ function showTab(t) {
   // Prize Coordinator role: Prizes and Tags only — no Settings.
   if (!isAdmin() && t === 'settings') t = 'prizes';
   _activeTab = t;
+  try { sessionStorage.setItem('pm_tab', t); } catch(e) {}
   ['prizes','tags','settings'].forEach(x => {
     const el = document.getElementById('tab-'+x);
     if (el) el.style.display = x===t?'block':'none';
@@ -317,3 +328,13 @@ function savePMSettings() {
 }
 
 boot();
+
+// Remember scroll position so a refresh puts you back where you were.
+(function(){
+  let tm=null;
+  const save=()=>{ try { sessionStorage.setItem('pm_scroll', String(window.scrollY||document.body.scrollTop||document.documentElement.scrollTop||0)); } catch(e) {} };
+  const onScroll=()=>{ clearTimeout(tm); tm=setTimeout(save,150); };
+  window.addEventListener('scroll', onScroll, {passive:true});
+  document.addEventListener('scroll', onScroll, {passive:true, capture:true});
+  window.addEventListener('pagehide', save);
+})();
