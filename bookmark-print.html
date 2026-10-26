@@ -232,6 +232,7 @@ function filterPrizes(){
   const status=document.getElementById('status-sel').value;
   return _allPrizes.filter(p=>{
     if(!p.donor||!p.needTag) return false;
+    if(p.cat==='SWAG Bag') return false;   // SWAG donations never get a tag
     if(p.bundledInto) return false;
     // donationTagType ('book'/'clothing'/'other') is set per-donation, independent
     // of itemType — an author can donate clothing, a business can donate a book, etc.

@@ -124,7 +124,8 @@ function showTab(t) {
 function renderTags() {
   const el = document.getElementById('tab-tags');
   if (!el) return;
-  const prizes = getPrizes().filter(p => p.needTag && !p.bundledInto);
+  // SWAG donations never get a tag, even if an old record still says needTag.
+  const prizes = getPrizes().filter(p => p.needTag && !p.bundledInto && p.cat !== 'SWAG Bag');
   const stages = [
     {key:'tagMade',    label:'1. Tag made',    color:'var(--amber)'},
     {key:'tagPrinted', label:'2. Tag printed',  color:'var(--purple)'},
