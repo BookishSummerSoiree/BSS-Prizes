@@ -152,6 +152,16 @@ const GDRIVE_FOLDER='1F4JcjLJhGbH14fUKv-dzrK1v85R8Qzqf';
 
 // Pre-select type from URL param
 document.getElementById('type-sel').value=TYPE;
+if(params.get('status')) document.getElementById('status-sel').value=params.get('status');
+// Keep the chosen tag type / filter in the URL so a refresh stays on the same screen.
+function rememberChoice(){
+  try{
+    const u=new URL(window.location.href);
+    u.searchParams.set('type',document.getElementById('type-sel').value);
+    u.searchParams.set('status',document.getElementById('status-sel').value);
+    history.replaceState(null,'',u.toString());
+  }catch(e){}
+}
 
 const BODY_TEXT='Donations like this make it<br>possible for us to provide<br>everyone a gift. 🎁<br>Please, find a way to show<br>them some gratitude!<br>Send them a message,<br>make a social media post, or<br>next time you are gift<br>shopping for yourself, or a<br>friend, remember them.';
 
@@ -342,6 +352,7 @@ function setPageOrientation(type){
 }
 
 function buildSheets(){
+  rememberChoice();
   const type=document.getElementById('type-sel').value;
   setPageOrientation(type);
   const filtered=filterPrizes();
