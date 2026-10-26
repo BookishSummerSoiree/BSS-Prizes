@@ -83,7 +83,7 @@ function renderShell() {
 
       <div id="budget-bar" style="padding:0 12px"></div>
 
-      <div style="padding:0 12px 8px">
+      <div id="goals-wrap" style="padding:0 12px 8px">
         <div class="goals-row" id="goals-bar"></div>
       </div>
 
@@ -111,6 +111,11 @@ function showTab(t) {
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) =>
     b.classList.toggle('active', ['prizes','tags','settings'][i]===t));
+  // The budget bars and count boxes only matter on the Prizes screen; they just clutter Tags.
+  ['budget-bar','goals-wrap'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.style.display = (t==='tags') ? 'none' : '';
+  });
   if (t==='prizes')   renderPrizes();
   if (t==='tags')     renderTags();
   if (t==='settings') renderPMSettings();
