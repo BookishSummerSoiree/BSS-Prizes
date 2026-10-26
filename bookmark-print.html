@@ -290,7 +290,7 @@ function clothingTag(p){
   const sizeSection = (isOneSize || !size) ? '' : `<div class="ct-size-value-wrap"><span class="ct-size-value">${esc(size)}</span></div>`;
   const cType=p.clothingType==='Other'?(p.clothingTypeCustom||''):(p.clothingType||'');
   const ctBody=`<div class="ct-body">Donations like this make it possible for<br>us to provide everyone a gift. Please, find<br>a way to show them some gratitude!<br>Send them a message, make a social<br>media post, or next time you are gift<br>shopping for yourself, or a friend,<br>remember them.</div>`;
-  const ctLead=`<div class="ct-lead">This ${esc(leadNoun(cType)||'clothing')} was donated by</div>`;
+  const ctLead=`<div class="ct-lead">This <b>${esc(leadNoun(cType)||'clothing')}</b> was donated by</div>`;
   return`<div class="ct">
     ${sizeSection}
     <div class="ct-mid">${ctLead}${logoArea}</div>
@@ -311,7 +311,7 @@ function itemTag(p){
   const qrSection=qrDest?`
     <div class="it-qr-img"><img src="${qr(qrDest,'454a85')}" alt="QR"></div>
     <div class="it-qr-lbl"><span>Scan the QR code<br>to visit ${esc(pr)} ${qrWord}.</span></div>`:'';
-  const itLead=`<div class="it-lead">This ${esc(leadNoun(p.name)||'item')} was donated by</div>`;
+  const itLead=`<div class="it-lead">This <b>${esc(leadNoun(p.name)||'item')}</b> was donated by</div>`;
   const itBody=`<div class="it-body">Donations like this make it possible for us to provide everyone a gift. Please, find a way to show them some gratitude! Send them a message, make a social media post, or next time you are gift shopping for yourself, or a friend, remember them.<img src="${HEART_IMG}" alt=""></div>`;
   return`<div class="it">
     <div class="it-mid">${itLead}${logoArea}</div>
