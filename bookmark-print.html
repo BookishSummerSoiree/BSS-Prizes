@@ -72,6 +72,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 */
 .page-clothing{display:grid;grid-template-columns:repeat(4,2.5in);grid-template-rows:repeat(2,4in);gap:0.02in;background:white;page-break-after:always}
 .ct{width:2.5in;height:4in;overflow:hidden;background-color:white;background-image:var(--ct-template-url);background-size:100% 100%;background-repeat:no-repeat;border:none;position:relative;font-family:Calibri,Carlito,sans-serif}
+.ct::before{content:'';position:absolute;left:0;right:0;top:0;height:.5in;background:#fff;z-index:0} /* cover the big baked-in hole circle */
+.ct::after{content:'';position:absolute;left:50%;top:.25in;width:.14in;height:.14in;margin:-.07in 0 0 -.07in;box-sizing:border-box;border:1.2px solid #222;border-radius:50%;z-index:0} /* smaller hole ring */
 .ct-size-value-wrap{position:absolute;left:0;right:0;top:.96in;height:.571in;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .ct-size-value{font-family:'Adobe Garamond Pro','EB Garamond',Garamond,serif;font-variant:small-caps;font-size:20pt;color:#1B2A4A;line-height:1;white-space:nowrap;display:inline-block}
 .ct-mid{position:absolute;left:.06in;right:.06in;top:1.6in;height:.7in;display:flex;flex-direction:column;align-items:stretch}
@@ -96,6 +98,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .page-item{display:grid;grid-template-columns:repeat(4,2.5in);grid-template-rows:repeat(2,4in);gap:0.02in;background:white;page-break-after:always}
 .it{width:2.5in;height:4in;overflow:hidden;background-color:white;background-image:var(--ct-template-url);background-size:100% 100%;background-repeat:no-repeat;border:none;position:relative;font-family:Calibri,Carlito,sans-serif}
 .it::before{content:'';position:absolute;left:0;right:0;top:.93in;height:.66in;background:#fff;z-index:0}
+.it::after{content:'';position:absolute;left:0;right:0;top:0;height:.5in;background:#fff;z-index:0} /* item tags: cover the baked-in punch-hole circle */
 .it > *{position:absolute}
 .it-mid{position:absolute;left:.06in;right:.06in;top:1.0in;height:.95in;display:flex;flex-direction:column;align-items:stretch}
 .it-lead{flex:none;display:flex;align-items:center;justify-content:center;text-align:center;font-family:Montserrat,Calibri,Carlito,sans-serif;font-style:normal;font-size:8.2pt;line-height:1.2;color:#3a7362;text-wrap:balance;overflow-wrap:anywhere;padding:.05in .14in 0}
