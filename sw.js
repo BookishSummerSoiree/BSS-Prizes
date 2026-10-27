@@ -5,6 +5,7 @@ const PRECACHE_URLS = [
   'bookmark-print.html',
   'manifest.json',
   'css/app.css',
+  'js/fbauth.js',
   'js/logo.js',
   'js/storage.js',
   'js/auth.js',
