@@ -62,6 +62,15 @@ function sortValueOf(p){
   }
   return +(p && p.value) || 0;
 }
+// True when a prize has a donor. A bundle counts if it has one itself or any item inside it does.
+function hasDonor(p){
+  if (p && String(p.donor||'').trim()) return true;
+  if (p && p.isBundle) {
+    var bName = p.name || String(p.id);
+    return getPrizes().some(function(x){ return !x.isBundle && x.bundledInto===bName && String(x.donor||'').trim(); });
+  }
+  return false;
+}
 function sortComparator(a, b){
   if (_sortMode === 'az') {
     return (a.name||'').localeCompare(b.name||'');
@@ -80,7 +89,7 @@ function sortComparator(a, b){
     return (a.name||'').localeCompare(b.name||'');
   }
   if (_sortMode === 'donations') {
-    // Donated prizes first, grouped by who donated them (A-Z), then the rest.
+    // Only donated prizes show in this sort (see catFilter), grouped by donor A-Z.
     var ad = (a.donor||'').trim(), bd = (b.donor||'').trim();
     if (!ad !== !bd) return ad ? -1 : 1;
     if (ad !== bd) return ad.localeCompare(bd);
@@ -167,7 +176,7 @@ function updatePrizeListAndCounts() {
     };
   }
   var catFilter = function(p){
-    if (_filterDonations && !p.donor) return false;
+    if ((_filterDonations || _sortMode==='donations') && !hasDonor(p)) return false;
     if (_filterItemType && p.itemType !== _filterItemType) return false;
     return !_filterCat || p.cat === _filterCat;
   };
