@@ -374,8 +374,10 @@ function buildPrizeList(allPrizes, bundles, individual, bundled, searchFilter, c
   } else {
     topHtml = bFiltered.map(function(b){ return bundleCard(b); }).join('') + individualHtml;
   }
+  // Items inside a bundle are shown inside that bundle's card only (tap the bundle to open it).
+  // They are listed separately only while filtering by item type, so a filter still finds them.
   var html = topHtml +
-             bndFiltered.map(function(p){ return prizeCard(p); }).join('');
+             (_filterItemType ? bndFiltered.map(function(p){ return prizeCard(p); }).join('') : '');
   if (!html) html = '<div style="text-align:center;padding:3rem;color:var(--text3)">No prizes found.</div>';
   el.innerHTML = html;
 }

@@ -180,6 +180,17 @@ async function addItemType(name) {
   }
 }
 
+// Remove a custom item type. Prizes using it move to Misc so nothing is lost.
+async function removeItemType(name) {
+  const base = ['Book','Bookish item','Clothing','Jewelry','Misc'];
+  if (base.includes(name)) return;
+  if (!_meta.itemTypes) _meta.itemTypes = base.slice();
+  _meta.itemTypes = _meta.itemTypes.filter(t => t !== name);
+  await dbSet('meta/itemTypes', _meta.itemTypes);
+  const users = getPrizes().filter(p => p && !p.isBundle && p.itemType === name);
+  for (const p of users) { try { await updatePrize(p.id, {itemType: 'Misc'}); } catch(e) {} }
+}
+
 // ── Sync poll ────────────────────────────────────────────────────────────
 let _pollInterval = null;
 // ── Backups (dated history) + Recently deleted ───────────────────
