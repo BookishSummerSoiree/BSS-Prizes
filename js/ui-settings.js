@@ -24,19 +24,6 @@ function renderSettings(){
       </div>
       <button class="btn danger" onclick="doSignOut()"><i class="ti ti-logout"></i> Sign out</button>
     </div>
-    <div class="card">
-      <div class="card-title">Item types</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Types you added yourself can be removed. Prizes using a removed type move to Misc.</div>
-      ${(function(){
-        const base=['Book','Bookish item','Clothing','Jewelry','Misc'];
-        const counts=(typeof getItemTypeCounts==='function')?getItemTypeCounts():{};
-        return getItemTypes().map(function(t){
-          const custom=!base.includes(t);
-          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:.5px solid var(--border)"><div style="flex:1;min-width:0;font-size:13px">'+escHtml(t)+' <span style="color:var(--text3);font-size:11px">('+(counts[t]||0)+')</span></div>'+
-            (custom?'<button class="btn danger" style="font-size:11px;padding:2px 8px" onclick="doRemoveItemType(\''+jsAttrEscape(t)+'\')"><i class="ti ti-trash"></i> Remove</button>':'')+'</div>';
-        }).join('');
-      })()}
-    </div>
     <div class="danger-zone">
       <h3><i class="ti ti-alert-triangle"></i> Danger zone</h3>
       <p style="font-size:12px;color:var(--text2);margin-bottom:8px">These actions affect live data.</p>
@@ -57,11 +44,4 @@ function confirmReset(){
     _prizes={};renderPrizes();renderTags();renderBudget();
     showToast('All prize data cleared');
   });
-}
-
-async function doRemoveItemType(name){
-  if(!confirm('Remove the item type "'+name+'"? Prizes using it will move to Misc.')) return;
-  await removeItemType(name);
-  showToast('Item type removed');
-  renderSettings();
 }
