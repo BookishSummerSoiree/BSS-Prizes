@@ -1513,6 +1513,9 @@ function _selectItemTypeInner(t, preFill) {
   renderPhotoPreview();
   pmUpdateSplitBtn();
 
+  // A Book whose author and title are known: if it is in the storefront, use its regular price as the Value.
+  if (isBook && !isEdit && pf && pf.author && pf.bookTitle && !pf.value) fillValueFromStore(pf.author, pf.bookTitle);
+
   // Add flow only: just finished the last staged field, so start on Value.
   if (!isEdit) { setTimeout(function(){ document.getElementById('pm-value')?.focus(); },60); }
 
@@ -1709,6 +1712,42 @@ function setDonorType(type, preFill) {
     setTimeout(function(){ var d2=document.getElementById('pm-donor'); if(d2 && document.activeElement!==d2) d2.focus(); },60);
   }
 }
+// ── Book value from the storefront ───────────────────────────────────────────
+// A donated book that is also for sale in the storefront gets its regular (full) price as the Value,
+// only if the Value box is still empty. Series: if the title matches a series name, uses the series price.
+var _storeCatalog = null;
+async function getStoreCatalog(){
+  if (_storeCatalog) return _storeCatalog;
+  try{
+    var res=await fetch(DONOR_LOGO_API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'getPreorderCatalog'})});
+    var j=await res.json();
+    if (j && j.success && Array.isArray(j.books)) _storeCatalog = j.books;
+  }catch(e){}
+  return _storeCatalog || [];
+}
+function _normT(x){ return String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function _price(v){ var n=parseFloat(String(v||'').replace(/[^0-9.]/g,'')); return n>0 ? n : 0; }
+async function fillValueFromStore(author, title){
+  try{
+    var books=await getStoreCatalog(); if(!books.length) return;
+    var a=_normT(author), t=_normT(title), val=0, what='';
+    var mine=books.filter(function(b){ return _normT(b.author)===a; });
+    var hit=mine.find(function(b){ return _normT(b.title)===t; });
+    if (hit){
+      val=_price(hit.regularPrice) || _price((hit.formatPrices||{}).paperback);
+      what=hit.title;
+    } else {
+      var ser=mine.find(function(b){ return b.isSeries && _normT(b.seriesName)===t; });
+      if (ser){ val=_price(ser.seriesRegularPrice) || _price((ser.seriesFormatPrices||{}).paperback); what=ser.seriesName+' (series)'; }
+    }
+    var box=document.getElementById('pm-value');
+    if (val && box && !String(box.value).trim()){
+      box.value=val.toFixed(2);
+      showToast('Value $'+val.toFixed(2)+' from the storefront price of '+what);
+    }
+  }catch(e){}
+}
+
 function toggleOtherAuthor(val){
   var f=document.getElementById('other-author-field'); if(f)f.style.display=val==='__other__'?'block':'none';
   if (val && val!=='__other__') fillFromAuthorInfo(val);
